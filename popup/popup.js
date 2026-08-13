@@ -1,0 +1,267 @@
+const statusEl = document.getElementById("status");
+const logEl = document.getElementById("log");
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const clearLogBtn = document.getElementById("clearLogBtn");
+const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+const settingsBtn = document.getElementById("settingsBtn");
+const backBtn = document.getElementById("backBtn");
+const mainView = document.getElementById("mainView");
+const settingsView = document.getElementById("settingsView");
+const settingsForm = document.getElementById("settingsForm");
+const apiKeyInput = document.getElementById("apiKeyInput");
+const apiKeyMeta = document.getElementById("apiKeyMeta");
+const toggleApiKeyBtn = document.getElementById("toggleApiKeyBtn");
+const promptRulesInput = document.getElementById("promptRulesInput");
+const submitDelayInput = document.getElementById("submitDelayInput");
+const resetSettingsBtn = document.getElementById("resetSettingsBtn");
+const settingsStatus = document.getElementById("settingsStatus");
+const commentHistoryList = document.getElementById("commentHistoryList");
+
+const UI_LOG_KEY = "uiLogs";
+const UI_STATUS_KEY = "uiStatus";
+
+function setStatus(status, detail) {
+  statusEl.className = `status ${status}`;
+  const label = detail ? `${status}: ${detail}` : status;
+  const textEl = statusEl.querySelector(".status-text");
+  if (textEl) {
+    textEl.textContent = label;
+  } else {
+    statusEl.textContent = label;
+  }
+}
+
+function addLogEntry(entry) {
+  const line = document.createElement("div");
+  line.className = "log-entry";
+  line.innerHTML = `<span class="time">[${entry.time}]</span>${entry.message}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function renderLogs(logs) {
+  logEl.innerHTML = "";
+  for (const entry of logs) {
+    addLogEntry(entry);
+  }
+}
+
+function setRunning(running) {
+  startBtn.disabled = running;
+  stopBtn.disabled = !running;
+}
+
+function showMainView() {
+  mainView.classList.remove("hidden");
+  settingsView.classList.add("hidden");
+}
+
+function showSettingsView() {
+  mainView.classList.add("hidden");
+  settingsView.classList.remove("hidden");
+  loadSettingsForm();
+}
+
+function setSettingsStatus(message, isError = false) {
+  settingsStatus.textContent = message;
+  settingsStatus.style.color = isError ? "var(--danger)" : "var(--success)";
+}
+
+function apiKeySourceLabel(source) {
+  if (source === "saved") return "Using key saved in extension settings.";
+  if (source === "config") return "Using key from background/config.js.";
+  return "No API key configured.";
+}
+
+async function renderCommentHistory() {
+  const response = await browser.runtime.sendMessage({ type: "GET_HISTORY" });
+  const entries = response?.entries || [];
+
+  if (!entries.length) {
+    commentHistoryList.innerHTML =
+      '<p class="comment-history-empty">No comments in the last 4 days.</p>';
+    return;
+  }
+
+  commentHistoryList.innerHTML = entries
+    .map(
+      (entry) => `
+        <div class="comment-history-item">
+          <span class="comment-history-title">${escapeHtml(entry.title)}</span>
+          <span class="comment-history-meta">
+            ${entry.site ? `${escapeHtml(entry.site)} · ` : ""}${escapeHtml(entry.commentedAt)}
+          </span>
+          <a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.url)}</a>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function loadSettingsForm() {
+  const settings = await browser.runtime.sendMessage({ type: "GET_SETTINGS" });
+  if (!settings) return;
+
+  apiKeyInput.value = settings.apiKey || "";
+  apiKeyMeta.textContent = `${apiKeySourceLabel(settings.apiKeySource)} Active: ${settings.apiKeyMasked}`;
+  promptRulesInput.value = settings.commentRules || "";
+  submitDelayInput.value = settings.submitDelaySeconds ?? 15;
+  apiKeyInput.type = "password";
+  toggleApiKeyBtn.textContent = "Show";
+  setSettingsStatus("");
+  await renderCommentHistory();
+}
+
+const CURSOR_ORIGINS = ["https://api.cursor.com/"];
+
+function beginRun() {
+  browser.runtime.sendMessage({ type: "START_RUN" });
+}
+
+function denyPermission() {
+  addLogEntry({
+    time: new Date().toLocaleTimeString(),
+    message:
+      "Cursor API permission denied. Enable api.cursor.com in about:addons → CommentExt → Permissions.",
+  });
+  setRunning(false);
+  setStatus("error", "Cursor API permission required");
+}
+
+async function loadPersistedState() {
+  const state = await browser.runtime.sendMessage({ type: "GET_STATE" });
+  if (!state) return;
+
+  if (state.logs?.length) {
+    renderLogs(state.logs);
+  }
+
+  if (state.status) {
+    setStatus(state.status, state.detail);
+    setRunning(state.status === "running");
+  }
+}
+
+startBtn.addEventListener("click", () => {
+  setRunning(true);
+  setStatus("running", "Starting...");
+
+  browser.permissions
+    .request({ origins: CURSOR_ORIGINS })
+    .then((granted) => {
+      if (!granted) {
+        denyPermission();
+        return;
+      }
+      beginRun();
+    })
+    .catch(() => {
+      denyPermission();
+    });
+});
+
+stopBtn.addEventListener("click", () => {
+  browser.runtime.sendMessage({ type: "STOP_RUN" });
+  setStatus("running", "Stopping...");
+});
+
+clearLogBtn.addEventListener("click", async () => {
+  await browser.runtime.sendMessage({ type: "CLEAR_LOGS" });
+  logEl.innerHTML = "";
+});
+
+clearHistoryBtn.addEventListener("click", async () => {
+  if (!confirm("Clear all product history?")) return;
+  await browser.runtime.sendMessage({ type: "CLEAR_HISTORY" });
+  addLogEntry({ time: new Date().toLocaleTimeString(), message: "History cleared." });
+  if (!settingsView.classList.contains("hidden")) {
+    await renderCommentHistory();
+  }
+});
+
+settingsBtn.addEventListener("click", () => {
+  showSettingsView();
+});
+
+backBtn.addEventListener("click", () => {
+  showMainView();
+});
+
+toggleApiKeyBtn.addEventListener("click", () => {
+  const showing = apiKeyInput.type === "text";
+  apiKeyInput.type = showing ? "password" : "text";
+  toggleApiKeyBtn.textContent = showing ? "Show" : "Hide";
+});
+
+settingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setSettingsStatus("Saving...");
+
+  const response = await browser.runtime.sendMessage({
+    type: "SAVE_SETTINGS",
+    settings: {
+      apiKey: apiKeyInput.value.trim(),
+      commentRules: promptRulesInput.value,
+      submitDelaySeconds: Number(submitDelayInput.value),
+    },
+  });
+
+  if (response?.error) {
+    setSettingsStatus(response.error, true);
+    return;
+  }
+
+  if (response?.settings) {
+    apiKeyMeta.textContent = `${apiKeySourceLabel(response.settings.apiKeySource)} Active: ${response.settings.apiKeyMasked}`;
+  }
+
+  setSettingsStatus("Settings saved.");
+});
+
+resetSettingsBtn.addEventListener("click", async () => {
+  if (!confirm("Reset all settings to defaults?")) return;
+
+  const response = await browser.runtime.sendMessage({ type: "RESET_SETTINGS" });
+  if (response?.settings) {
+    apiKeyInput.value = response.settings.apiKey || "";
+    apiKeyMeta.textContent = `${apiKeySourceLabel(response.settings.apiKeySource)} Active: ${response.settings.apiKeyMasked}`;
+    promptRulesInput.value = response.settings.commentRules || "";
+    submitDelayInput.value = response.settings.submitDelaySeconds ?? 15;
+  }
+  setSettingsStatus("Defaults restored.");
+});
+
+browser.runtime.onMessage.addListener((message) => {
+  if (message.type === "LOG" && message.entry) {
+    addLogEntry(message.entry);
+  }
+  if (message.type === "STATUS") {
+    setStatus(message.status, message.detail);
+    setRunning(message.status === "running");
+  }
+});
+
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+
+  if (changes[UI_LOG_KEY]?.newValue) {
+    renderLogs(changes[UI_LOG_KEY].newValue);
+  }
+
+  if (changes[UI_STATUS_KEY]?.newValue) {
+    const { status, detail } = changes[UI_STATUS_KEY].newValue;
+    setStatus(status, detail);
+    setRunning(status === "running");
+  }
+});
+
+loadPersistedState();

@@ -1,0 +1,5 @@
+background/config.js
+dist/
+*.zip
+tmp-*.html
+test-agent.json

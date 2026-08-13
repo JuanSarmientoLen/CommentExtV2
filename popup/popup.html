@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>OneMaster CommentExt</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-glow" aria-hidden="true"></div>
+
+    <div id="mainView">
+      <header class="panel header-panel">
+        <div class="brand">
+          <img src="../icons/icon-48.png" alt="" class="brand-icon" width="28" height="28" />
+          <div>
+            <h1>CommentExt</h1>
+            <p class="tagline">Auto Comment Engine</p>
+          </div>
+        </div>
+        <div id="status" class="status idle">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-text">Idle</span>
+        </div>
+      </header>
+
+      <div class="actions">
+        <button id="startBtn" class="primary">
+          <span class="btn-glow" aria-hidden="true"></span>
+          Start Run
+        </button>
+        <button id="stopBtn" class="secondary danger-btn">Stop All</button>
+      </div>
+
+      <div class="info panel">
+        <p>Posts 2 comments each on Gundamit and Chowbrick.</p>
+        <p>Comments are generated via Cursor API (Composer 2.5).</p>
+        <p>Runs continue in the background. Reopen this popup anytime to view logs.</p>
+      </div>
+
+      <section class="panel log-panel">
+        <div class="log-header">
+          <h2>
+            <span class="log-icon" aria-hidden="true">▸</span>
+            System Log
+          </h2>
+          <button id="clearLogBtn" class="link">Clear</button>
+        </div>
+        <div id="log" class="log"></div>
+      </section>
+
+      <footer class="footer-actions">
+        <button id="settingsBtn" class="link">Settings</button>
+        <button id="clearHistoryBtn" class="link danger">Clear History</button>
+      </footer>
+    </div>
+
+    <div id="settingsView" class="hidden">
+      <header class="panel header-panel settings-header">
+        <div>
+          <h1>Settings</h1>
+          <p class="tagline">AI prompt &amp; timing</p>
+        </div>
+        <button id="backBtn" class="link">Back</button>
+      </header>
+
+      <form id="settingsForm" class="settings-form panel">
+        <div class="field">
+          <label for="apiKeyInput">Cursor API key</label>
+          <p id="apiKeyMeta" class="field-hint"></p>
+          <div class="api-key-row">
+            <input
+              id="apiKeyInput"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="crsr_..."
+            />
+            <button type="button" id="toggleApiKeyBtn" class="secondary small-btn">
+              Show
+            </button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="promptRulesInput">AI prompt rules</label>
+          <p class="field-hint">
+            Edits the rules block only. Product description and existing comments are
+            appended automatically.
+          </p>
+          <textarea id="promptRulesInput" rows="10"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="submitDelayInput">Submit delay (seconds)</label>
+          <p class="field-hint">Wait time after filling the comment before clicking Submit.</p>
+          <input id="submitDelayInput" type="number" min="1" max="120" step="1" />
+        </div>
+
+        <div class="field">
+          <label>Comment history (last 4 days)</label>
+          <p class="field-hint">Products commented on or skipped due to rate limits.</p>
+          <div id="commentHistoryList" class="comment-history-list"></div>
+        </div>
+
+        <div class="settings-actions">
+          <button type="submit" class="primary">Save Settings</button>
+          <button type="button" id="resetSettingsBtn" class="secondary">Reset Defaults</button>
+        </div>
+        <p id="settingsStatus" class="settings-status" aria-live="polite"></p>
+      </form>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+.git/
+dist/
+background/config.js
+tmp-*.html
+test-agent.json
+icons/generate_icons.py
+tools/
+*.md
+.amoignore
