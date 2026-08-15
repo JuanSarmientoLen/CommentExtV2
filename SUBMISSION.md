@@ -1,4 +1,4 @@
-# Firefox Add-ons (AMO) Submission — OneMaster CommentExt v4.2
+# Firefox Add-ons (AMO) Submission — OneMaster CommentExt v4.5.0
 
 ## Before you upload
 
@@ -13,22 +13,22 @@
 
    Alternative: [web-ext build](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/#packaging-your-extension) also produces AMO-compatible zips.
 
-3. Upload `onemaster-commentext-4.2.zip` at:
+3. Upload `onemaster-commentext-4.5.0.zip` at:
    https://addons.mozilla.org/developers/addon/submit/
 
 ## AMO listing checklist
 
-- **Version:** 4.2
+- **Version:** 4.5.0
 - **Extension ID:** `commentext@commentext.local`
-- **Min Firefox:** 140.0 (required for built-in data collection consent)
+- **Min Firefox:** 140.0 (desktop and Android)
 - **Privacy policy:** Paste or host `PRIVACY.md` and link it in the AMO developer dashboard
 - **Data collection (manifest):** `websiteContent` — product text sent to Cursor API with the user’s API key
 - **Icons:** 48×48 and 96×96 PNG included
-- **Reviewer notes:** Explain that users must configure their own Cursor API key in `background/config.js` after install, or ship a future options page
+- **Reviewer notes:** Users configure their Cursor API key in Settings (popup) or `background/config.js`
 
 ## Suggested reviewer notes
 
-> This extension automates posting user-generated product comments on Gundamit and Chowbrick. It reads public product page content, sends it to api.cursor.com using the user’s own API key to generate comment text, then fills and submits the store review form. No remote code is loaded. The user starts each run manually from the popup.
+> This extension automates posting user-generated product comments on Gundamit and Chowbrick. On desktop, it runs a full multi-tab workflow from the popup. On Firefox for Android, it offers assist mode: the user opens a product page, then taps "Comment on Current Page" to generate and submit one comment on that tab. Product page text is sent to api.cursor.com using the user’s own API key. No remote code is loaded. Each run is started manually from the popup.
 
 ## After changing the extension ID
 

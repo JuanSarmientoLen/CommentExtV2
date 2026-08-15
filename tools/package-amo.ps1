@@ -5,7 +5,9 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root "dist"
-$zipPath = Join-Path $root "onemaster-commentext-4.5.zip"
+$manifestPath = Join-Path $root "manifest.json"
+$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+$zipPath = Join-Path $root "onemaster-commentext-$($manifest.version).zip"
 
 if (Test-Path $dist) {
   Remove-Item $dist -Recurse -Force
@@ -16,8 +18,11 @@ Copy-Item (Join-Path $root "manifest.json") $dist -Force
 
 $backgroundDist = Join-Path $dist "background"
 New-Item -ItemType Directory -Path $backgroundDist | Out-Null
-foreach ($file in @("background.js", "cursor-api.js", "history.js", "prompt.js", "settings.js")) {
-  Copy-Item (Join-Path $root "background\$file") $backgroundDist -Force
+foreach ($file in Get-ChildItem (Join-Path $root "background\*.js")) {
+  if ($file.Name -eq "config.js" -or $file.Name -eq "config.example.js") {
+    continue
+  }
+  Copy-Item $file.FullName $backgroundDist -Force
 }
 Copy-Item (Join-Path $root "background\config.example.js") (Join-Path $backgroundDist "config.js") -Force
 
