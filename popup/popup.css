@@ -209,6 +209,50 @@ header h1 {
   flex: 1;
 }
 
+.assist-panel {
+  margin-bottom: 12px;
+}
+
+.assist-lead {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.assist-lead strong {
+  color: var(--cyan);
+}
+
+.assist-btn {
+  width: 100%;
+}
+
+.assist-stop-btn {
+  width: 100%;
+  margin-top: 10px;
+}
+
+body.android-mode .actions,
+body.android-mode .site-actions,
+body.android-mode #infoDesktop,
+body.android-mode #infoBackground {
+  display: none;
+}
+
+body.android-mode #assistPanel,
+body.android-mode #infoAssist {
+  display: block;
+}
+
+body.android-mode #assistPanel.hidden {
+  display: block;
+}
+
+body.android-mode #infoAssist.hidden {
+  display: block;
+}
+
 button {
   position: relative;
   border: none;

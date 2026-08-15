@@ -184,6 +184,11 @@ async function extractProductData() {
   const proId = getProductId();
   if (!proId) throw new Error("Could not determine product ID");
 
+  const title =
+    document.querySelector(".prod_title, .pro_name, h1.name, .pd_name")?.textContent?.trim() ||
+    document.title?.trim() ||
+    "";
+
   const description =
     document.querySelector(".desc_cnt")?.innerText?.trim() ||
     document.querySelector(".pd_content .editor_txt")?.innerText?.trim() ||
@@ -199,7 +204,30 @@ async function extractProductData() {
       .filter(Boolean);
   }
 
-  return { proId, description, comments };
+  return { proId, title, description, comments };
+}
+
+function getPageInfo() {
+  const site = /gundamit\.com/i.test(location.hostname)
+    ? "Gundamit"
+    : /chowbrick\.com/i.test(location.hostname)
+      ? "Chowbrick"
+      : null;
+
+  const title =
+    document.querySelector(".prod_title, .pro_name, h1.name, .pd_name")?.textContent?.trim() ||
+    document.title?.trim() ||
+    "";
+
+  return {
+    url: location.href,
+    productUrl: normalizeProductUrl(location.href),
+    title,
+    site,
+    isSupportedSite: !!site,
+    isProductPage: !!getProductId() && !isReviewWritePage(),
+    isReviewWritePage: isReviewWritePage(),
+  };
 }
 
 function findVisibleAlert() {
@@ -402,6 +430,11 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       if (message.type === "EXTRACT_DATA") {
         sendResponse(await extractProductData());
+        return;
+      }
+
+      if (message.type === "GET_PAGE_INFO") {
+        sendResponse(getPageInfo());
         return;
       }
 

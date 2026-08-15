@@ -4,6 +4,14 @@ const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const gundamitOneBtn = document.getElementById("gundamitOneBtn");
 const chowbrickOneBtn = document.getElementById("chowbrickOneBtn");
+const assistBtn = document.getElementById("assistBtn");
+const assistStopBtn = document.getElementById("assistStopBtn");
+const assistPanel = document.getElementById("assistPanel");
+const desktopActions = document.getElementById("desktopActions");
+const desktopSiteActions = document.getElementById("desktopSiteActions");
+const infoDesktop = document.getElementById("infoDesktop");
+const infoAssist = document.getElementById("infoAssist");
+const infoBackground = document.getElementById("infoBackground");
 const clearLogBtn = document.getElementById("clearLogBtn");
 const clearHistoryBtn = document.getElementById("clearHistoryBtn");
 const settingsBtn = document.getElementById("settingsBtn");
@@ -27,6 +35,31 @@ if (versionLabel) {
 
 const UI_LOG_KEY = "uiLogs";
 const UI_STATUS_KEY = "uiStatus";
+
+let isAndroidUi = false;
+
+function applyPlatformUi(android) {
+  isAndroidUi = android;
+  document.body.classList.toggle("android-mode", android);
+
+  if (android) {
+    desktopActions?.classList.add("hidden");
+    desktopSiteActions?.classList.add("hidden");
+    assistPanel?.classList.remove("hidden");
+    infoDesktop?.classList.add("hidden");
+    infoAssist?.classList.remove("hidden");
+    infoBackground?.classList.add("hidden");
+  }
+}
+
+async function initPlatformUi() {
+  try {
+    const platform = await browser.runtime.getPlatformInfo();
+    applyPlatformUi(platform.os === "android");
+  } catch (_) {
+    applyPlatformUi(false);
+  }
+}
 
 function setStatus(status, detail) {
   statusEl.className = `status ${status}`;
@@ -66,7 +99,9 @@ function setRunning(running) {
   startBtn.disabled = running;
   gundamitOneBtn.disabled = running;
   chowbrickOneBtn.disabled = running;
+  assistBtn.disabled = running;
   stopBtn.disabled = !running;
+  assistStopBtn?.classList.toggle("hidden", !running || !isAndroidUi);
 }
 
 function showMainView() {
@@ -137,6 +172,28 @@ async function loadSettingsForm() {
 
 const CURSOR_ORIGINS = ["https://api.cursor.com/"];
 
+function beginAssist() {
+  browser.runtime.sendMessage({ type: "START_ASSIST" });
+}
+
+function startAssistWithPermission() {
+  setRunning(true);
+  setStatus("running", "Assist starting...");
+
+  browser.permissions
+    .request({ origins: CURSOR_ORIGINS })
+    .then((granted) => {
+      if (!granted) {
+        denyPermission();
+        return;
+      }
+      beginAssist();
+    })
+    .catch(() => {
+      denyPermission();
+    });
+}
+
 function beginRun(options = {}) {
   browser.runtime.sendMessage({
     type: "START_RUN",
@@ -185,6 +242,10 @@ async function loadPersistedState() {
     setStatus(state.status, state.detail);
     setRunning(state.status === "running");
   }
+
+  if (state.isAndroid) {
+    applyPlatformUi(true);
+  }
 }
 
 startBtn.addEventListener("click", () => {
@@ -197,6 +258,15 @@ gundamitOneBtn.addEventListener("click", () => {
 
 chowbrickOneBtn.addEventListener("click", () => {
   startRunWithPermission({ siteKey: "chowbrick", commentsPerSite: 1 });
+});
+
+assistBtn.addEventListener("click", () => {
+  startAssistWithPermission();
+});
+
+assistStopBtn?.addEventListener("click", () => {
+  browser.runtime.sendMessage({ type: "STOP_RUN" });
+  setStatus("running", "Stopping...");
 });
 
 stopBtn.addEventListener("click", () => {
@@ -295,3 +365,4 @@ browser.storage.onChanged.addListener((changes, area) => {
 });
 
 loadPersistedState();
+initPlatformUi();

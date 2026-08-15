@@ -30,7 +30,7 @@
         </div>
       </header>
 
-      <div class="actions">
+      <div id="desktopActions" class="actions">
         <button id="startBtn" class="primary">
           <span class="btn-glow" aria-hidden="true"></span>
           Start Run (2 each)
@@ -38,15 +38,27 @@
         <button id="stopBtn" class="secondary danger-btn">Stop All</button>
       </div>
 
-      <div class="site-actions">
+      <div id="desktopSiteActions" class="site-actions">
         <button id="gundamitOneBtn" class="secondary site-btn">1× Gundamit</button>
         <button id="chowbrickOneBtn" class="secondary site-btn">1× Chowbrick</button>
       </div>
 
-      <div class="info panel">
-        <p>Full run posts 2 comments each on Gundamit and Chowbrick.</p>
+      <div id="assistPanel" class="assist-panel panel hidden">
+        <p class="assist-lead">
+          <strong>Android assist mode.</strong> Open a Gundamit or Chowbrick product page in this tab, then generate and post a comment here.
+        </p>
+        <button id="assistBtn" class="primary assist-btn">
+          <span class="btn-glow" aria-hidden="true"></span>
+          Comment on Current Page
+        </button>
+        <button id="assistStopBtn" class="secondary danger-btn assist-stop-btn hidden">Stop</button>
+      </div>
+
+      <div class="info panel" id="infoPanel">
+        <p id="infoDesktop">Full run posts 2 comments each on Gundamit and Chowbrick.</p>
+        <p id="infoAssist" class="hidden">Stay on the product tab while the comment generates and submits.</p>
         <p>Comments are generated via Cursor API (Composer 2.5).</p>
-        <p>Runs continue in the background. Reopen this popup anytime to view logs.</p>
+        <p id="infoBackground">Runs continue in the background. Reopen this popup anytime to view logs.</p>
       </div>
 
       <section class="panel log-panel">

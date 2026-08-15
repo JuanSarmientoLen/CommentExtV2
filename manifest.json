@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "OneMaster CommentExt",
-  "version": "4.4.0",
-  "description": "Automates product comments on Gundamit and Chowbrick using the Cursor API (Composer 2.5).",
+  "version": "4.5.0",
+  "description": "Automates product comments on Gundamit and Chowbrick using the Cursor API. Desktop full-auto; Firefox Android assist mode.",
   "author": "OneMaster",
   "icons": {
     "48": "icons/icon-48.png",
@@ -22,7 +22,9 @@
       "background/settings.js",
       "background/prompt.js",
       "background/cursor-api.js",
-      "background/background.js"
+      "background/platform.js",
+      "background/background.js",
+      "background/assist.js"
     ]
   },
   "action": {
@@ -50,6 +52,9 @@
         "required": ["websiteContent"],
         "optional": []
       }
+    },
+    "gecko_android": {
+      "strict_min_version": "140.0"
     }
   }
 }

@@ -509,10 +509,23 @@ async function runAutomation(options = {}) {
 
 browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "START_RUN") {
-    runAutomation({
-      siteKey: message.siteKey || null,
-      commentsPerSite: message.commentsPerSite || COMMENTS_PER_SITE,
+    isAndroid().then((android) => {
+      if (android) {
+        log("Full auto runs are desktop-only on this device. Starting assist mode instead.");
+        runAssistComment();
+        return;
+      }
+      runAutomation({
+        siteKey: message.siteKey || null,
+        commentsPerSite: message.commentsPerSite || COMMENTS_PER_SITE,
+      });
     });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message.type === "START_ASSIST") {
+    runAssistComment();
     sendResponse({ ok: true });
     return true;
   }
@@ -524,12 +537,17 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "GET_STATE") {
-    browser.storage.local.get([UI_LOG_KEY, UI_STATUS_KEY]).then((data) => {
+    Promise.all([
+      browser.storage.local.get([UI_LOG_KEY, UI_STATUS_KEY]),
+      getPlatformInfoCached(),
+    ]).then(([data, platform]) => {
       const savedStatus = data[UI_STATUS_KEY] || {};
       sendResponse({
         status: runState.status,
         detail: savedStatus.detail || "",
         logs: data[UI_LOG_KEY] || [],
+        platform: platform.os,
+        isAndroid: platform.os === "android",
       });
     });
     return true;
