@@ -5,7 +5,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root "dist"
-$zipPath = Join-Path $root "onemaster-commentext-4.2.zip"
+$zipPath = Join-Path $root "onemaster-commentext-4.4.zip"
 
 if (Test-Path $dist) {
   Remove-Item $dist -Recurse -Force

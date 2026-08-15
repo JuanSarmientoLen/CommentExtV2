@@ -19,6 +19,17 @@ function sleep(ms) {
   });
 }
 
+function normalizeProductUrl(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    return `${parsed.origin}${path}`;
+  } catch (_) {
+    return url;
+  }
+}
+
 function parseProducts() {
   const products = [];
   const seen = new Set();
@@ -27,7 +38,9 @@ function parseProducts() {
     const href = link.getAttribute("href");
     if (!href) continue;
 
-    const url = new URL(href.split("#")[0], location.origin).href;
+    const url = normalizeProductUrl(
+      new URL(href.split("#")[0], location.origin).href
+    );
     if (seen.has(url)) continue;
     seen.add(url);
 
@@ -56,10 +69,12 @@ function parseProducts() {
 
 function pickProduct(products, history, used) {
   const now = Date.now();
+  const usedSet = new Set((used || []).map(normalizeProductUrl));
 
   const available = products.filter((product) => {
-    if (used.includes(product.url)) return false;
-    const entry = history[product.url];
+    const url = normalizeProductUrl(product.url);
+    if (usedSet.has(url)) return false;
+    const entry = history[url] || history[product.url];
     if (entry && now - entry.timestamp < COOLDOWN_MS) return false;
     return true;
   });
@@ -201,6 +216,42 @@ function findVisibleAlert() {
   return null;
 }
 
+function isRateLimitText(text) {
+  return /only post|every \d+ day|3\s*day|comment every|already (posted|commented|reviewed)|rate limit|too many comment/i.test(
+    text || ""
+  );
+}
+
+async function waitForAlertToClear(timeoutMs = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (abortRequested) throw new Error("Stopped by user");
+    if (!findVisibleAlert()) return;
+    await sleep(200);
+  }
+}
+
+async function waitForReviewForm(timeoutMs = 45000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (abortRequested) throw new Error("Stopped by user");
+
+    if (!isReviewWritePage()) {
+      return { alreadySubmitted: true };
+    }
+
+    const textarea =
+      document.querySelector("#review_content") ||
+      document.querySelector('textarea[name="content"]');
+    const submitBtn =
+      document.querySelector('#review_form input[type="submit"]') ||
+      document.querySelector('#review_form button[type="submit"]');
+    if (textarea && submitBtn) return { textarea, submitBtn };
+    await sleep(300);
+  }
+  throw new Error("Review form not ready");
+}
+
 function dismissAlert(alertEl) {
   const buttons = alertEl.querySelectorAll(
     "a, button, input[type=button], .btn, .confirm, .ok"
@@ -237,61 +288,83 @@ async function clickCommentButton() {
 
   activateClick(btn);
 
-  return new Promise((resolve, reject) => {
-    let checks = 0;
-    const interval = setInterval(() => {
-      if (abortRequested) {
-        clearInterval(interval);
-        reject(new Error("Stopped by user"));
-        return;
-      }
+  const start = Date.now();
+  while (Date.now() - start < 20000) {
+    if (abortRequested) throw new Error("Stopped by user");
 
-      checks += 1;
+    const alertEl = findVisibleAlert();
+    if (alertEl) {
+      const blocked = isRateLimitText(alertEl.textContent || "");
+      dismissAlert(alertEl);
+      await waitForAlertToClear();
+      return { blocked, navigated: false };
+    }
 
-      if (isReviewWritePage() || location.href !== startUrl) {
-        clearInterval(interval);
-        resolve({ blocked: false, navigated: true });
-        return;
-      }
+    if (isReviewWritePage() || location.href !== startUrl) {
+      return { blocked: false, navigated: true };
+    }
 
-      const alertEl = findVisibleAlert();
-      if (alertEl) {
-        const text = alertEl.textContent || "";
-        const blocked = /only post|every \d+ day|3 day|comment every/i.test(text);
-        dismissAlert(alertEl);
-        clearInterval(interval);
-        resolve({ blocked, navigated: false });
-        return;
-      }
+    await sleep(250);
+  }
 
-      if (checks >= 80) {
-        clearInterval(interval);
-        if (isReviewWritePage()) {
-          resolve({ blocked: false, navigated: true });
-        } else {
-          resolve({ blocked: false, navigated: false, timeout: true });
-        }
-      }
-    }, 250);
-  });
+  if (isReviewWritePage()) {
+    return { blocked: false, navigated: true };
+  }
+
+  const lateAlert = findVisibleAlert();
+  if (lateAlert) {
+    const blocked = isRateLimitText(lateAlert.textContent || "");
+    dismissAlert(lateAlert);
+    await waitForAlertToClear();
+    return { blocked, navigated: false };
+  }
+
+  return { blocked: false, navigated: false, timeout: true };
 }
 
 async function submitComment(comment, delayMs = 15000) {
-  const textarea = document.querySelector("#review_content");
-  if (!textarea) throw new Error("Comment textarea not found");
+  const form = await waitForReviewForm();
+  if (form.alreadySubmitted) {
+    return { submitted: true };
+  }
+
+  const { textarea, submitBtn } = form;
 
   textarea.focus();
   textarea.value = comment;
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
   textarea.dispatchEvent(new Event("change", { bubbles: true }));
 
+  if (!textarea.value.trim()) {
+    throw new Error("Failed to fill comment textarea");
+  }
+
   const waitMs = Math.max(1000, Math.min(120000, Number(delayMs) || 15000));
   await sleep(waitMs);
 
-  const submitBtn = document.querySelector('#review_form input[type="submit"]');
-  if (!submitBtn) throw new Error("Submit button not found");
-
   submitBtn.click();
+
+  const start = Date.now();
+  while (Date.now() - start < 12000) {
+    if (abortRequested) throw new Error("Stopped by user");
+
+    if (!isReviewWritePage() || !document.querySelector("#review_content")) {
+      return { submitted: true };
+    }
+
+    const alertEl = findVisibleAlert();
+    if (alertEl) {
+      const text = alertEl.textContent || "";
+      if (isRateLimitText(text)) {
+        dismissAlert(alertEl);
+        await waitForAlertToClear();
+        return { submitted: false, blocked: true };
+      }
+    }
+
+    await sleep(300);
+  }
+
   return { submitted: true };
 }
 
@@ -311,12 +384,19 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     try {
       if (message.type === "PICK_PRODUCT") {
         const products = parseProducts();
+        const normalizedHistory = {};
+        for (const [url, entry] of Object.entries(message.history || {})) {
+          normalizedHistory[normalizeProductUrl(url)] = entry;
+        }
         const product = pickProduct(
           products,
-          message.history || {},
+          normalizedHistory,
           message.used || []
         );
-        sendResponse({ product });
+        if (product) {
+          product.url = normalizeProductUrl(product.url);
+        }
+        sendResponse({ product, totalProducts: products.length });
         return;
       }
 

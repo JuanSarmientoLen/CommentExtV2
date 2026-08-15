@@ -21,7 +21,7 @@
           <img src="../icons/icon-48.png" alt="" class="brand-icon" width="28" height="28" />
           <div>
             <h1>CommentExt</h1>
-            <p class="tagline">Auto Comment Engine</p>
+            <p class="tagline">Auto Comment Engine · <span id="versionLabel" class="version-label"></span></p>
           </div>
         </div>
         <div id="status" class="status idle">
@@ -33,13 +33,18 @@
       <div class="actions">
         <button id="startBtn" class="primary">
           <span class="btn-glow" aria-hidden="true"></span>
-          Start Run
+          Start Run (2 each)
         </button>
         <button id="stopBtn" class="secondary danger-btn">Stop All</button>
       </div>
 
+      <div class="site-actions">
+        <button id="gundamitOneBtn" class="secondary site-btn">1× Gundamit</button>
+        <button id="chowbrickOneBtn" class="secondary site-btn">1× Chowbrick</button>
+      </div>
+
       <div class="info panel">
-        <p>Posts 2 comments each on Gundamit and Chowbrick.</p>
+        <p>Full run posts 2 comments each on Gundamit and Chowbrick.</p>
         <p>Comments are generated via Cursor API (Composer 2.5).</p>
         <p>Runs continue in the background. Reopen this popup anytime to view logs.</p>
       </div>

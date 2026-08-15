@@ -8,13 +8,29 @@ async function getHistory() {
 
 async function addToHistory(url, meta = {}) {
   const history = await getHistory();
-  const previous = history[url] || {};
-  history[url] = {
+  const normalizedUrl = normalizeHistoryUrl(url);
+  const previous = history[normalizedUrl] || history[url] || {};
+  history[normalizedUrl] = {
     timestamp: Date.now(),
     title: meta.title || previous.title || "",
     site: meta.site || previous.site || "",
+    comment: meta.comment ?? previous.comment ?? "",
   };
+  if (normalizedUrl !== url && history[url]) {
+    delete history[url];
+  }
   await browser.storage.local.set({ [HISTORY_KEY]: history });
+}
+
+function normalizeHistoryUrl(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    return `${parsed.origin}${path}`;
+  } catch (_) {
+    return url;
+  }
 }
 
 function formatProductLabel(url, title) {
@@ -38,6 +54,7 @@ async function getRecentHistoryEntries() {
       url,
       title: formatProductLabel(url, entry.title),
       site: entry.site || "",
+      comment: entry.comment || "",
       timestamp: entry.timestamp,
       commentedAt: new Date(entry.timestamp).toLocaleString(),
     }))

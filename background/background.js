@@ -136,6 +136,20 @@ async function ensureTabScript(tabId, files) {
   await sleep(500);
 }
 
+async function submitLikelySucceeded(tabId) {
+  try {
+    const tab = await browser.tabs.get(tabId);
+    const url = tab.url || "";
+    return (
+      url &&
+      !/review-write/i.test(url) &&
+      /gundamit\.com|chowbrick\.com/i.test(url)
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function sendTabMessage(tabId, message, timeout = MESSAGE_TIMEOUT) {
   checkStop();
   const files = ["content/store.js"];
@@ -170,6 +184,10 @@ async function sendTabMessage(tabId, message, timeout = MESSAGE_TIMEOUT) {
     } catch (err) {
       lastError = err;
       if (shouldStop()) throw new Error("Stopped by user");
+
+      if (message.type === "SUBMIT_COMMENT" && (await submitLikelySucceeded(tabId))) {
+        return { submitted: true };
+      }
 
       const retryable = /establish connection|receiving end|message port closed/i.test(
         err.message
@@ -233,25 +251,72 @@ async function generateComment(prompt) {
     log(message);
   });
 
-  log(
-    `Generated: "${comment.slice(0, 80)}${comment.length > 80 ? "..." : ""}"`
-  );
+  log(`Generated comment:\n${comment}`);
   return comment;
 }
 
-async function processSite(site, usedUrls) {
+function getSiteByKey(siteKey) {
+  return SITES.find((site) => site.key === siteKey) || null;
+}
+
+function getSitesForRun(siteKey) {
+  if (!siteKey) return SITES;
+  const site = getSiteByKey(siteKey);
+  return site ? [site] : SITES;
+}
+
+async function reloadListingTab(listingTab, site) {
+  log(`Reloading ${site.name} listing page...`);
+  await browser.tabs.update(listingTab.id, { url: site.listingUrl, active: true });
+  await waitForTabComplete(listingTab.id);
+  await sleep(1500);
+}
+
+async function skipBlockedProduct({
+  site,
+  product,
+  listingTab,
+  productTab,
+  usedUrls,
+  commentsPerSite,
+  posted,
+  attempts,
+  maxAttempts,
+  reason,
+}) {
+  log(`${reason} — adding to history and picking another product.`);
+  await addToHistory(product.url, {
+    title: product.title,
+    site: site.name,
+  });
+  usedUrls.add(product.url);
+
+  try {
+    await browser.tabs.remove(productTab.id);
+  } catch (_) {
+    /* tab may already be closed */
+  }
+  runState.managedTabIds.delete(productTab.id);
+
+  if (posted < commentsPerSite && attempts < maxAttempts) {
+    await reloadListingTab(listingTab, site);
+  }
+}
+
+async function processSite(site, commentsPerSite = COMMENTS_PER_SITE) {
+  const usedUrls = new Set();
   log(`Opening ${site.name} New-Update page...`);
   const listingTab = await createManagedTab(site.listingUrl, true);
 
-  const history = await getHistory();
   let posted = 0;
   let attempts = 0;
-  const maxAttempts = 12;
+  const maxAttempts = Math.max(12, commentsPerSite * 6);
 
-  while (posted < COMMENTS_PER_SITE && attempts < maxAttempts) {
+  while (posted < commentsPerSite && attempts < maxAttempts) {
     checkStop();
 
     attempts += 1;
+    const history = await getHistory();
     const pickResponse = await sendTabMessage(listingTab.id, {
       type: "PICK_PRODUCT",
       history,
@@ -260,7 +325,10 @@ async function processSite(site, usedUrls) {
 
     const product = pickResponse?.product;
     if (!product) {
-      log(`No eligible products left on ${site.name}.`);
+      const total = pickResponse?.totalProducts ?? 0;
+      log(
+        `No eligible products left on ${site.name} (${total} on page, ${usedUrls.size} used this run).`
+      );
       break;
     }
 
@@ -271,11 +339,11 @@ async function processSite(site, usedUrls) {
     const productTab = await createManagedTab(product.url, true);
     const data = await sendTabMessage(productTab.id, { type: "EXTRACT_DATA" });
 
-    const prompt = await buildPrompt(data.description, data.comments);
-    const comment = await generateComment(prompt);
-
     await browser.tabs.update(productTab.id, { active: true });
     await sleep(800);
+
+    const prompt = await buildPrompt(data.description, data.comments);
+    const comment = await generateComment(prompt);
 
     const clickResult = await sendTabMessage(productTab.id, {
       type: "CLICK_COMMENT",
@@ -288,21 +356,18 @@ async function processSite(site, usedUrls) {
       }
       log("Review form already open, continuing...");
     } else if (clickResult.blocked) {
-      log(
-        "3-day comment limit hit — adding to history and picking another product."
-      );
-      await addToHistory(product.url, {
-        title: product.title,
-        site: site.name,
+      await skipBlockedProduct({
+        site,
+        product,
+        listingTab,
+        productTab,
+        usedUrls,
+        commentsPerSite,
+        posted,
+        attempts,
+        maxAttempts,
+        reason: "3-day comment limit hit on comment button",
       });
-      usedUrls.add(product.url);
-      history[product.url] = {
-        timestamp: Date.now(),
-        title: product.title,
-        site: site.name,
-      };
-      await browser.tabs.remove(productTab.id);
-      runState.managedTabIds.delete(productTab.id);
       continue;
     }
 
@@ -315,45 +380,80 @@ async function processSite(site, usedUrls) {
     }
 
     await waitForTabComplete(productTab.id);
-    await sleep(800);
+    await sleep(1200);
 
     const settings = await getSettings();
     const delaySec = Math.round(settings.submitDelayMs / 1000);
     log(`Submitting comment (${delaySec}s delay before submit)...`);
-    await sendTabMessage(productTab.id, {
-      type: "SUBMIT_COMMENT",
-      comment,
-      delayMs: settings.submitDelayMs,
-    });
+    let submitResult;
+    try {
+      submitResult = await sendTabMessage(productTab.id, {
+        type: "SUBMIT_COMMENT",
+        comment,
+        delayMs: settings.submitDelayMs,
+      });
+    } catch (err) {
+      if (await submitLikelySucceeded(productTab.id)) {
+        log("Comment posted (page left review form after submit).");
+        submitResult = { submitted: true };
+      } else {
+        throw err;
+      }
+    }
+
+    if (submitResult?.blocked) {
+      await skipBlockedProduct({
+        site,
+        product,
+        listingTab,
+        productTab,
+        usedUrls,
+        commentsPerSite,
+        posted,
+        attempts,
+        maxAttempts,
+        reason: "3-day comment limit hit on submit",
+      });
+      continue;
+    }
+
+    if (!submitResult?.submitted) {
+      throw new Error("Comment submission failed");
+    }
 
     await addToHistory(product.url, {
       title: product.title,
       site: site.name,
+      comment,
     });
     usedUrls.add(product.url);
-    history[product.url] = {
-      timestamp: Date.now(),
-      title: product.title,
-      site: site.name,
-    };
     posted += 1;
-    log(`Posted comment ${posted}/${COMMENTS_PER_SITE} on ${site.name}.`);
+    log(
+      `Posted comment ${posted}/${commentsPerSite} on ${site.name}:\n${comment}`
+    );
 
     await browser.tabs.remove(productTab.id);
     runState.managedTabIds.delete(productTab.id);
-    await browser.tabs.update(listingTab.id, { active: true });
+
+    if (posted < commentsPerSite && attempts < maxAttempts) {
+      await reloadListingTab(listingTab, site);
+    }
   }
 
   await browser.tabs.remove(listingTab.id);
   runState.managedTabIds.delete(listingTab.id);
 
-  if (posted < COMMENTS_PER_SITE) {
-    log(`Only posted ${posted}/${COMMENTS_PER_SITE} on ${site.name}.`);
+  if (posted < commentsPerSite) {
+    log(`Only posted ${posted}/${commentsPerSite} on ${site.name}.`);
   }
 }
 
-async function runAutomation() {
+async function runAutomation(options = {}) {
   if (runState.status === "running") return;
+
+  const siteKey = options.siteKey || null;
+  const commentsPerSite = options.commentsPerSite || COMMENTS_PER_SITE;
+  const sites = getSitesForRun(siteKey);
 
   runState.stopRequested = false;
   runState.managedTabIds = new Set();
@@ -364,18 +464,23 @@ async function runAutomation() {
     await archiveCursorAgent();
     await clearExpiredHistory();
     log("--- New run started ---");
-    log("Starting auto comment run (Gundamit, Chowbrick)...");
+
+    if (siteKey) {
+      const site = getSiteByKey(siteKey);
+      log(`Starting ${site.name} run (${commentsPerSite} comment${commentsPerSite === 1 ? "" : "s"})...`);
+    } else {
+      log(`Starting auto comment run (Gundamit, Chowbrick — ${commentsPerSite} each)...`);
+    }
+
     log("Checking Cursor API access...");
     await verifyCursorConnection();
     log("Cursor API connected.");
     log("Warming up Cursor agent before scraping products...");
     await warmupCursorAgent((message) => log(message));
 
-    const usedUrls = new Set();
-
-    for (const site of SITES) {
+    for (const site of sites) {
       checkStop();
-      await processSite(site, usedUrls);
+      await processSite(site, commentsPerSite);
     }
 
     if (shouldStop()) throw new Error("Stopped by user");
@@ -404,7 +509,10 @@ async function runAutomation() {
 
 browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "START_RUN") {
-    runAutomation();
+    runAutomation({
+      siteKey: message.siteKey || null,
+      commentsPerSite: message.commentsPerSite || COMMENTS_PER_SITE,
+    });
     sendResponse({ ok: true });
     return true;
   }

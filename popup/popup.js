@@ -2,6 +2,8 @@ const statusEl = document.getElementById("status");
 const logEl = document.getElementById("log");
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
+const gundamitOneBtn = document.getElementById("gundamitOneBtn");
+const chowbrickOneBtn = document.getElementById("chowbrickOneBtn");
 const clearLogBtn = document.getElementById("clearLogBtn");
 const clearHistoryBtn = document.getElementById("clearHistoryBtn");
 const settingsBtn = document.getElementById("settingsBtn");
@@ -17,6 +19,11 @@ const submitDelayInput = document.getElementById("submitDelayInput");
 const resetSettingsBtn = document.getElementById("resetSettingsBtn");
 const settingsStatus = document.getElementById("settingsStatus");
 const commentHistoryList = document.getElementById("commentHistoryList");
+const versionLabel = document.getElementById("versionLabel");
+
+if (versionLabel) {
+  versionLabel.textContent = `v${browser.runtime.getManifest().version}`;
+}
 
 const UI_LOG_KEY = "uiLogs";
 const UI_STATUS_KEY = "uiStatus";
@@ -32,10 +39,18 @@ function setStatus(status, detail) {
   }
 }
 
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function addLogEntry(entry) {
   const line = document.createElement("div");
   line.className = "log-entry";
-  line.innerHTML = `<span class="time">[${entry.time}]</span>${entry.message}`;
+  line.innerHTML = `<span class="time">[${escapeHtml(entry.time)}]</span>${escapeHtml(entry.message)}`;
   logEl.appendChild(line);
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -49,6 +64,8 @@ function renderLogs(logs) {
 
 function setRunning(running) {
   startBtn.disabled = running;
+  gundamitOneBtn.disabled = running;
+  chowbrickOneBtn.disabled = running;
   stopBtn.disabled = !running;
 }
 
@@ -92,19 +109,16 @@ async function renderCommentHistory() {
           <span class="comment-history-meta">
             ${entry.site ? `${escapeHtml(entry.site)} · ` : ""}${escapeHtml(entry.commentedAt)}
           </span>
+          ${
+            entry.comment
+              ? `<div class="comment-history-text">${escapeHtml(entry.comment)}</div>`
+              : ""
+          }
           <a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.url)}</a>
         </div>
       `
     )
     .join("");
-}
-
-function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 async function loadSettingsForm() {
@@ -123,8 +137,30 @@ async function loadSettingsForm() {
 
 const CURSOR_ORIGINS = ["https://api.cursor.com/"];
 
-function beginRun() {
-  browser.runtime.sendMessage({ type: "START_RUN" });
+function beginRun(options = {}) {
+  browser.runtime.sendMessage({
+    type: "START_RUN",
+    siteKey: options.siteKey || null,
+    commentsPerSite: options.commentsPerSite || 2,
+  });
+}
+
+function startRunWithPermission(options = {}) {
+  setRunning(true);
+  setStatus("running", "Starting...");
+
+  browser.permissions
+    .request({ origins: CURSOR_ORIGINS })
+    .then((granted) => {
+      if (!granted) {
+        denyPermission();
+        return;
+      }
+      beginRun(options);
+    })
+    .catch(() => {
+      denyPermission();
+    });
 }
 
 function denyPermission() {
@@ -152,21 +188,15 @@ async function loadPersistedState() {
 }
 
 startBtn.addEventListener("click", () => {
-  setRunning(true);
-  setStatus("running", "Starting...");
+  startRunWithPermission({ commentsPerSite: 2 });
+});
 
-  browser.permissions
-    .request({ origins: CURSOR_ORIGINS })
-    .then((granted) => {
-      if (!granted) {
-        denyPermission();
-        return;
-      }
-      beginRun();
-    })
-    .catch(() => {
-      denyPermission();
-    });
+gundamitOneBtn.addEventListener("click", () => {
+  startRunWithPermission({ siteKey: "gundamit", commentsPerSite: 1 });
+});
+
+chowbrickOneBtn.addEventListener("click", () => {
+  startRunWithPermission({ siteKey: "chowbrick", commentsPerSite: 1 });
 });
 
 stopBtn.addEventListener("click", () => {

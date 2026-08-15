@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OneMaster CommentExt",
-  "version": "4.2",
+  "version": "4.4.0",
   "description": "Automates product comments on Gundamit and Chowbrick using the Cursor API (Composer 2.5).",
   "author": "OneMaster",
   "icons": {
