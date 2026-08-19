@@ -43,6 +43,10 @@
         <button id="chowbrickOneBtn" class="secondary site-btn">1× Chowbrick</button>
       </div>
 
+      <div class="showz-actions">
+        <button id="showzBtn" class="secondary site-btn showz-btn">ShowZ Replies (2 products)</button>
+      </div>
+
       <div id="assistPanel" class="assist-panel panel hidden">
         <p class="assist-lead">
           <strong>Android assist mode.</strong> Open a Gundamit or Chowbrick product page in this tab, then generate and post a comment here.
@@ -106,18 +110,33 @@
         </div>
 
         <div class="field">
-          <label for="promptRulesInput">AI prompt rules</label>
+          <label for="promptRulesInput">AI prompt rules (new comments)</label>
           <p class="field-hint">
             Edits the rules block only. Product description and existing comments are
             appended automatically.
           </p>
-          <textarea id="promptRulesInput" rows="10"></textarea>
+          <textarea id="promptRulesInput" rows="8"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="showzReplyRulesInput">AI prompt rules (ShowZ replies)</label>
+          <p class="field-hint">
+            Rules for reply generation on ShowZ. Target comment and product context are
+            appended automatically.
+          </p>
+          <textarea id="showzReplyRulesInput" rows="8"></textarea>
         </div>
 
         <div class="field">
           <label for="submitDelayInput">Submit delay (seconds)</label>
-          <p class="field-hint">Wait time after filling the comment before clicking Submit.</p>
+          <p class="field-hint">Wait time after filling a new comment before clicking Submit.</p>
           <input id="submitDelayInput" type="number" min="1" max="120" step="1" />
+        </div>
+
+        <div class="field">
+          <label for="showzReplyDelayInput">ShowZ reply delay (seconds)</label>
+          <p class="field-hint">Wait time after filling a ShowZ reply before clicking Submit.</p>
+          <input id="showzReplyDelayInput" type="number" min="1" max="120" step="1" />
         </div>
 
         <div class="field">

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "OneMaster CommentExt",
-  "version": "4.5.0",
-  "description": "Automates product comments on Gundamit and Chowbrick using the Cursor API. Desktop full-auto; Firefox Android assist mode.",
+  "version": "4.6.0",
+  "description": "Automates product comments on Gundamit, Chowbrick, and ShowZ using the Cursor API. Desktop full-auto; Firefox Android assist mode.",
   "author": "OneMaster",
   "icons": {
     "48": "icons/icon-48.png",
@@ -13,6 +13,8 @@
   "host_permissions": [
     "*://gundamit.com/*",
     "*://chowbrick.com/*",
+    "*://showzstore.com/*",
+    "*://www.showzstore.com/*",
     "https://api.cursor.com/*"
   ],
   "background": {
@@ -24,7 +26,8 @@
       "background/cursor-api.js",
       "background/platform.js",
       "background/background.js",
-      "background/assist.js"
+      "background/assist.js",
+      "background/showz.js"
     ]
   },
   "action": {
@@ -41,6 +44,11 @@
     {
       "matches": ["*://gundamit.com/*", "*://chowbrick.com/*"],
       "js": ["content/store.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://showzstore.com/*", "*://www.showzstore.com/*"],
+      "js": ["content/showz.js"],
       "run_at": "document_idle"
     }
   ],

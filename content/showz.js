@@ -1,0 +1,476 @@
+const COOLDOWN_MS = 4 * 24 * 60 * 60 * 1000;
+const ONEMASTER_PATTERN = /one\s*-?\s*master/i;
+let abortRequested = false;
+
+function sleep(ms) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const tick = () => {
+      if (abortRequested) {
+        reject(new Error("Stopped by user"));
+        return;
+      }
+      if (Date.now() - start >= ms) {
+        resolve();
+        return;
+      }
+      setTimeout(tick, 200);
+    };
+    tick();
+  });
+}
+
+function normalizeProductUrl(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    return `${parsed.origin}${path}`;
+  } catch (_) {
+    return url;
+  }
+}
+
+function isVisible(el) {
+  if (!el) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  return el.offsetParent !== null || style.position === "fixed";
+}
+
+function activateClick(el) {
+  el.scrollIntoView({ block: "center", behavior: "instant" });
+  el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  el.click();
+}
+
+function isOneMasterAuthor(name) {
+  return ONEMASTER_PATTERN.test(String(name || "").trim());
+}
+
+function shuffleArray(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function parseProducts() {
+  const products = [];
+  const seen = new Set();
+
+  for (const link of document.querySelectorAll("a.review_count")) {
+    const href = link.getAttribute("href");
+    if (!href) continue;
+
+    const url = normalizeProductUrl(new URL(href.split("#")[0], location.origin).href);
+    if (seen.has(url)) continue;
+    seen.add(url);
+
+    const countMatch = link.textContent.match(/\((\d+)\)/);
+    const commentCount = countMatch ? parseInt(countMatch[1], 10) : 0;
+
+    const container =
+      link.closest(".pro_item") ||
+      link.closest("dl") ||
+      link.closest(".item") ||
+      link.parentElement;
+
+    let title = "";
+    if (container) {
+      const titleEl = container.querySelector(
+        ".prod_name a, .pro_name a, h3 a, .name a"
+      );
+      if (titleEl) title = titleEl.textContent.trim();
+    }
+
+    products.push({ url, title, commentCount });
+  }
+
+  return products;
+}
+
+function pickRandomProducts(products, history, used, count = 2) {
+  const now = Date.now();
+  const usedSet = new Set((used || []).map(normalizeProductUrl));
+
+  const available = products.filter((product) => {
+    const url = normalizeProductUrl(product.url);
+    if (usedSet.has(url)) return false;
+    const entry = history[url] || history[product.url];
+    if (entry && now - entry.timestamp < COOLDOWN_MS) return false;
+    return true;
+  });
+
+  return shuffleArray(available).slice(0, count);
+}
+
+function getProductId() {
+  const input = document.querySelector("#ProId");
+  if (input?.value) return input.value;
+
+  const hashMatch = location.hash.match(/^#(\d+)$/);
+  if (hashMatch) return hashMatch[1];
+
+  const match = location.pathname.match(/_p(\d+)\.html/);
+  if (match) return match[1];
+
+  const matchWrite = location.pathname.match(/review-write\/(\d+)\.html/);
+  if (matchWrite) return matchWrite[1];
+
+  return null;
+}
+
+function getAuthorName(item) {
+  const selectors = [
+    ".review_user a",
+    ".review_user",
+    ".review_name",
+    ".user_name",
+    ".member_name",
+    ".name a",
+    ".name",
+  ];
+  for (const selector of selectors) {
+    const el = item.querySelector(selector);
+    if (el) {
+      const text = (el.textContent || "").trim();
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function getCommentText(item) {
+  const el =
+    item.querySelector(".review_main .content") ||
+    item.querySelector(".review_content") ||
+    item.querySelector(".content");
+  return (el?.textContent || "").trim();
+}
+
+function getNestedReplyItems(item) {
+  const replyRoot =
+    item.querySelector(":scope > .review_reply") ||
+    item.querySelector(":scope > .review_reply_list") ||
+    item.querySelector(":scope > .reply_list");
+  if (!replyRoot) return [];
+  return [...replyRoot.querySelectorAll(".review_item")];
+}
+
+function oneMasterRepliedInThread(item) {
+  for (const reply of getNestedReplyItems(item)) {
+    if (isOneMasterAuthor(getAuthorName(reply))) return true;
+    if (oneMasterRepliedInThread(reply)) return true;
+  }
+  return false;
+}
+
+function getTopLevelReviewItems() {
+  const list =
+    document.querySelector("#review_list") ||
+    document.querySelector(".review_list") ||
+    document.querySelector(".goods_review_list") ||
+    document.querySelector(".review_box");
+
+  if (list) {
+    const direct = [...list.querySelectorAll(":scope > .review_item")];
+    if (direct.length) return direct;
+  }
+
+  const all = [...document.querySelectorAll(".review_item")];
+  return all.filter((item) => !item.parentElement?.closest(".review_item"));
+}
+
+function isEligibleTopLevelComment(item) {
+  const author = getAuthorName(item);
+  if (isOneMasterAuthor(author)) return false;
+  if (oneMasterRepliedInThread(item)) return false;
+  const text = getCommentText(item);
+  if (!text) return false;
+  return true;
+}
+
+function findLikeButton(item) {
+  const selectors = [
+    "a.good",
+    ".review_like a",
+    ".review_like",
+    ".like_btn",
+    ".operate_like",
+    "a.like",
+    ".thumb_up",
+    ".review_operate a.good",
+    "[class*='like'] a",
+    "a[title*='like' i]",
+    "a[title*='thumb' i]",
+  ];
+  for (const selector of selectors) {
+    const el = item.querySelector(selector);
+    if (isVisible(el)) return el;
+  }
+
+  for (const el of item.querySelectorAll("a, button, span")) {
+    const text = (el.textContent || "").trim().toLowerCase();
+    if (text === "like" || text.includes("thumb")) return el;
+  }
+  return null;
+}
+
+function findReplyButton(item) {
+  const selectors = [
+    ".review_reply_btn",
+    "a.reply_btn",
+    ".btn_reply",
+    ".reply a",
+    "a.reply",
+    ".review_operate a.reply",
+  ];
+  for (const selector of selectors) {
+    const el = item.querySelector(selector);
+    if (isVisible(el)) return el;
+  }
+
+  for (const el of item.querySelectorAll("a, button, span")) {
+    const text = (el.textContent || "").trim();
+    if (/^reply$/i.test(text)) return el;
+  }
+  return null;
+}
+
+function findReplyTextarea(item) {
+  const selectors = [
+    "textarea.review_content",
+    ".reply_box textarea",
+    ".review_reply_box textarea",
+    ".reply_text textarea",
+    "textarea[name='content']",
+    "textarea",
+  ];
+  for (const selector of selectors) {
+    const el = item.querySelector(selector);
+    if (el && !el.disabled) return el;
+  }
+  return null;
+}
+
+function findReplySubmitButton(item) {
+  const form =
+    item.querySelector(".review_reply_form") ||
+    item.querySelector(".reply_form") ||
+    item.querySelector("form");
+
+  const scope = form || item;
+  const selectors = [
+    "input[type='submit']",
+    "button[type='submit']",
+    ".btn_submit",
+    ".reply_submit",
+    ".submit_btn",
+    "a.submit",
+  ];
+  for (const selector of selectors) {
+    const el = scope.querySelector(selector);
+    if (isVisible(el)) return el;
+  }
+
+  for (const el of scope.querySelectorAll("a, button, input[type=button]")) {
+    const text = (el.textContent || el.value || "").trim().toLowerCase();
+    if (text === "submit" || text === "reply" || text === "post") return el;
+  }
+  return null;
+}
+
+async function fetchComments(proId) {
+  const body = new URLSearchParams({
+    page: "0",
+    ProId: String(proId),
+    Rating: "0",
+    Action: "goods",
+  });
+
+  const response = await fetch("/ajax/review_list.html", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+    credentials: "include",
+  });
+
+  const html = await response.text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return [...doc.querySelectorAll(".review_item .review_main .content")]
+    .map((el) => el.textContent.trim())
+    .filter(Boolean);
+}
+
+async function getReplyContext() {
+  const proId = getProductId();
+  if (!proId) throw new Error("Could not determine product ID");
+
+  const title =
+    document.querySelector(".prod_title, .pro_name, h1.name, .pd_name")?.textContent?.trim() ||
+    document.title?.trim() ||
+    "";
+
+  const description =
+    document.querySelector(".desc_cnt")?.innerText?.trim() ||
+    document.querySelector(".pd_content .editor_txt")?.innerText?.trim() ||
+    document.querySelector(".prod_description")?.innerText?.trim() ||
+    "";
+
+  let comments = [];
+  try {
+    comments = await fetchComments(proId);
+  } catch (_) {
+    comments = [...document.querySelectorAll(".review_item .review_main .content")]
+      .map((el) => el.textContent.trim())
+      .filter(Boolean);
+  }
+
+  const topLevel = getTopLevelReviewItems();
+  const eligibleComments = [];
+
+  topLevel.forEach((item, index) => {
+    if (!isEligibleTopLevelComment(item)) return;
+    eligibleComments.push({
+      index,
+      author: getAuthorName(item),
+      text: getCommentText(item),
+    });
+  });
+
+  return {
+    proId,
+    title,
+    description,
+    comments,
+    eligibleComments,
+  };
+}
+
+function getTopLevelItemByIndex(index) {
+  const items = getTopLevelReviewItems();
+  const item = items[index];
+  if (!item) throw new Error(`Comment index ${index} not found on page`);
+  if (!isEligibleTopLevelComment(item)) {
+    throw new Error(`Comment index ${index} is no longer eligible`);
+  }
+  return item;
+}
+
+async function waitForReplyForm(item, timeoutMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (abortRequested) throw new Error("Stopped by user");
+    const textarea = findReplyTextarea(item);
+    const submitBtn = findReplySubmitButton(item);
+    if (textarea && submitBtn) return { textarea, submitBtn };
+    await sleep(300);
+  }
+  throw new Error("Reply form not ready");
+}
+
+async function executeReply(commentIndex, replyText, submitDelayMs = 30000) {
+  abortRequested = false;
+  const item = getTopLevelItemByIndex(commentIndex);
+
+  const likeBtn = findLikeButton(item);
+  if (likeBtn) {
+    activateClick(likeBtn);
+    await sleep(600);
+  }
+
+  const replyBtn = findReplyButton(item);
+  if (!replyBtn) throw new Error("Reply button not found");
+  activateClick(replyBtn);
+  await sleep(800);
+
+  const { textarea, submitBtn } = await waitForReplyForm(item);
+
+  textarea.focus();
+  textarea.value = replyText;
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  textarea.dispatchEvent(new Event("change", { bubbles: true }));
+
+  if (!textarea.value.trim()) {
+    throw new Error("Failed to fill reply textarea");
+  }
+
+  const waitMs = Math.max(1000, Math.min(120000, Number(submitDelayMs) || 30000));
+  await sleep(waitMs);
+
+  activateClick(submitBtn);
+
+  const start = Date.now();
+  while (Date.now() - start < 12000) {
+    if (abortRequested) throw new Error("Stopped by user");
+    if (!findReplyTextarea(item) || !isVisible(findReplySubmitButton(item))) {
+      return { submitted: true };
+    }
+    await sleep(300);
+  }
+
+  return { submitted: true };
+}
+
+browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "ABORT_RUN") {
+    abortRequested = true;
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message.type === "PING") {
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  (async () => {
+    try {
+      if (message.type === "PICK_RANDOM_PRODUCTS") {
+        const products = parseProducts();
+        const normalizedHistory = {};
+        for (const [url, entry] of Object.entries(message.history || {})) {
+          normalizedHistory[normalizeProductUrl(url)] = entry;
+        }
+        const picked = pickRandomProducts(
+          products,
+          normalizedHistory,
+          message.used || [],
+          message.count || 2
+        );
+        for (const product of picked) {
+          product.url = normalizeProductUrl(product.url);
+        }
+        sendResponse({ products: picked, totalProducts: products.length });
+        return;
+      }
+
+      if (message.type === "GET_REPLY_CONTEXT") {
+        sendResponse(await getReplyContext());
+        return;
+      }
+
+      if (message.type === "EXECUTE_REPLY") {
+        abortRequested = false;
+        sendResponse(
+          await executeReply(
+            message.commentIndex,
+            message.replyText,
+            message.submitDelayMs
+          )
+        );
+        return;
+      }
+
+      sendResponse({ error: "Unknown message type" });
+    } catch (err) {
+      sendResponse({ error: err.message });
+    }
+  })();
+
+  return true;
+});

@@ -202,7 +202,15 @@ header h1 {
 .site-actions {
   display: flex;
   gap: 10px;
+  margin-bottom: 10px;
+}
+
+.showz-actions {
   margin-bottom: 12px;
+}
+
+.showz-btn {
+  width: 100%;
 }
 
 .site-btn {
@@ -235,6 +243,7 @@ header h1 {
 
 body.android-mode .actions,
 body.android-mode .site-actions,
+body.android-mode .showz-actions,
 body.android-mode #infoDesktop,
 body.android-mode #infoBackground {
   display: none;

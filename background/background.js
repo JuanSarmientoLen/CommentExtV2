@@ -150,9 +150,14 @@ async function submitLikelySucceeded(tabId) {
   }
 }
 
-async function sendTabMessage(tabId, message, timeout = MESSAGE_TIMEOUT) {
+async function sendTabMessage(
+  tabId,
+  message,
+  timeout = MESSAGE_TIMEOUT,
+  contentFiles = ["content/store.js"]
+) {
   checkStop();
-  const files = ["content/store.js"];
+  const files = contentFiles;
   let lastError;
 
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -526,6 +531,19 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "START_ASSIST") {
     runAssistComment();
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message.type === "START_SHOWZ") {
+    isAndroid().then((android) => {
+      if (android) {
+        log("ShowZ reply runs require desktop Firefox.");
+        updateStatus("error", "ShowZ requires desktop");
+        return;
+      }
+      runShowZReplies();
+    });
     sendResponse({ ok: true });
     return true;
   }

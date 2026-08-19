@@ -1,5 +1,6 @@
 const SETTINGS_KEY = "extensionSettings";
 const DEFAULT_SUBMIT_DELAY_MS = 15000;
+const DEFAULT_SHOWZ_REPLY_DELAY_MS = 30000;
 const MIN_SUBMIT_DELAY_MS = 1000;
 const MAX_SUBMIT_DELAY_MS = 120000;
 
@@ -14,6 +15,17 @@ const DEFAULT_COMMENT_RULES = `You write a single product-page comment only. Rul
 - Do not use phrases like "Curious to see how".
 - Avoid the word "silhouette"; use more casual wording instead.
 - Output ONLY the comment text, nothing else. No quotes around it.`;
+
+const DEFAULT_SHOWZ_REPLY_RULES = `You write a single reply to an existing product comment. Rules:
+- Be informed based on the product description and other comments on the page.
+- Not political.
+- Do not use em dashes or en dashes as punctuation.
+- Positive tone; agree with the original comment when possible.
+- When possible, add helpful extra context about the product from the page.
+- At most 2 sentences. English only.
+- Casual tone. No bullet points or list formatting.
+- Do not address or mention any username.
+- Output ONLY the reply text, nothing else. No quotes around it.`;
 
 function isPlaceholderApiKey(key) {
   return !key || /your_api_key_here/i.test(key);
@@ -30,7 +42,9 @@ async function getSettings() {
   const stored = data[SETTINGS_KEY] || {};
   return {
     commentRules: stored.commentRules || DEFAULT_COMMENT_RULES,
+    showzReplyRules: stored.showzReplyRules || DEFAULT_SHOWZ_REPLY_RULES,
     submitDelayMs: stored.submitDelayMs ?? DEFAULT_SUBMIT_DELAY_MS,
+    showzReplyDelayMs: stored.showzReplyDelayMs ?? DEFAULT_SHOWZ_REPLY_DELAY_MS,
     apiKey: stored.apiKey || "",
   };
 }
@@ -54,7 +68,9 @@ async function getSettingsForPopup() {
 
   return {
     commentRules: settings.commentRules,
+    showzReplyRules: settings.showzReplyRules,
     submitDelaySeconds: Math.round(settings.submitDelayMs / 1000),
+    showzReplyDelaySeconds: Math.round(settings.showzReplyDelayMs / 1000),
     apiKey: effectiveKey,
     apiKeyMasked: maskApiKey(effectiveKey),
     apiKeySource: !isPlaceholderApiKey(storedKey)
@@ -75,12 +91,28 @@ async function saveSettings(partial) {
     next.commentRules = String(partial.commentRules).trim() || DEFAULT_COMMENT_RULES;
   }
 
+  if (partial.showzReplyRules !== undefined) {
+    next.showzReplyRules =
+      String(partial.showzReplyRules).trim() || DEFAULT_SHOWZ_REPLY_RULES;
+  }
+
   if (partial.submitDelaySeconds !== undefined) {
     const seconds = Number(partial.submitDelaySeconds);
     const ms = Number.isFinite(seconds)
       ? seconds * 1000
       : DEFAULT_SUBMIT_DELAY_MS;
     next.submitDelayMs = Math.max(
+      MIN_SUBMIT_DELAY_MS,
+      Math.min(MAX_SUBMIT_DELAY_MS, ms)
+    );
+  }
+
+  if (partial.showzReplyDelaySeconds !== undefined) {
+    const seconds = Number(partial.showzReplyDelaySeconds);
+    const ms = Number.isFinite(seconds)
+      ? seconds * 1000
+      : DEFAULT_SHOWZ_REPLY_DELAY_MS;
+    next.showzReplyDelayMs = Math.max(
       MIN_SUBMIT_DELAY_MS,
       Math.min(MAX_SUBMIT_DELAY_MS, ms)
     );
@@ -98,7 +130,9 @@ async function resetSettings() {
   await browser.storage.local.set({
     [SETTINGS_KEY]: {
       commentRules: DEFAULT_COMMENT_RULES,
+      showzReplyRules: DEFAULT_SHOWZ_REPLY_RULES,
       submitDelayMs: DEFAULT_SUBMIT_DELAY_MS,
+      showzReplyDelayMs: DEFAULT_SHOWZ_REPLY_DELAY_MS,
       apiKey: "",
     },
   });

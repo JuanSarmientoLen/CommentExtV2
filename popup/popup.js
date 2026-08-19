@@ -4,6 +4,7 @@ const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const gundamitOneBtn = document.getElementById("gundamitOneBtn");
 const chowbrickOneBtn = document.getElementById("chowbrickOneBtn");
+const showzBtn = document.getElementById("showzBtn");
 const assistBtn = document.getElementById("assistBtn");
 const assistStopBtn = document.getElementById("assistStopBtn");
 const assistPanel = document.getElementById("assistPanel");
@@ -23,7 +24,9 @@ const apiKeyInput = document.getElementById("apiKeyInput");
 const apiKeyMeta = document.getElementById("apiKeyMeta");
 const toggleApiKeyBtn = document.getElementById("toggleApiKeyBtn");
 const promptRulesInput = document.getElementById("promptRulesInput");
+const showzReplyRulesInput = document.getElementById("showzReplyRulesInput");
 const submitDelayInput = document.getElementById("submitDelayInput");
+const showzReplyDelayInput = document.getElementById("showzReplyDelayInput");
 const resetSettingsBtn = document.getElementById("resetSettingsBtn");
 const settingsStatus = document.getElementById("settingsStatus");
 const commentHistoryList = document.getElementById("commentHistoryList");
@@ -99,6 +102,7 @@ function setRunning(running) {
   startBtn.disabled = running;
   gundamitOneBtn.disabled = running;
   chowbrickOneBtn.disabled = running;
+  showzBtn.disabled = running;
   assistBtn.disabled = running;
   stopBtn.disabled = !running;
   assistStopBtn?.classList.toggle("hidden", !running || !isAndroidUi);
@@ -163,7 +167,9 @@ async function loadSettingsForm() {
   apiKeyInput.value = settings.apiKey || "";
   apiKeyMeta.textContent = `${apiKeySourceLabel(settings.apiKeySource)} Active: ${settings.apiKeyMasked}`;
   promptRulesInput.value = settings.commentRules || "";
+  showzReplyRulesInput.value = settings.showzReplyRules || "";
   submitDelayInput.value = settings.submitDelaySeconds ?? 15;
+  showzReplyDelayInput.value = settings.showzReplyDelaySeconds ?? 30;
   apiKeyInput.type = "password";
   toggleApiKeyBtn.textContent = "Show";
   setSettingsStatus("");
@@ -171,6 +177,28 @@ async function loadSettingsForm() {
 }
 
 const CURSOR_ORIGINS = ["https://api.cursor.com/"];
+
+function beginShowZRun() {
+  browser.runtime.sendMessage({ type: "START_SHOWZ" });
+}
+
+function startShowZWithPermission() {
+  setRunning(true);
+  setStatus("running", "ShowZ starting...");
+
+  browser.permissions
+    .request({ origins: CURSOR_ORIGINS })
+    .then((granted) => {
+      if (!granted) {
+        denyPermission();
+        return;
+      }
+      beginShowZRun();
+    })
+    .catch(() => {
+      denyPermission();
+    });
+}
 
 function beginAssist() {
   browser.runtime.sendMessage({ type: "START_ASSIST" });
@@ -260,6 +288,10 @@ chowbrickOneBtn.addEventListener("click", () => {
   startRunWithPermission({ siteKey: "chowbrick", commentsPerSite: 1 });
 });
 
+showzBtn.addEventListener("click", () => {
+  startShowZWithPermission();
+});
+
 assistBtn.addEventListener("click", () => {
   startAssistWithPermission();
 });
@@ -311,7 +343,9 @@ settingsForm.addEventListener("submit", async (event) => {
     settings: {
       apiKey: apiKeyInput.value.trim(),
       commentRules: promptRulesInput.value,
+      showzReplyRules: showzReplyRulesInput.value,
       submitDelaySeconds: Number(submitDelayInput.value),
+      showzReplyDelaySeconds: Number(showzReplyDelayInput.value),
     },
   });
 
@@ -335,7 +369,9 @@ resetSettingsBtn.addEventListener("click", async () => {
     apiKeyInput.value = response.settings.apiKey || "";
     apiKeyMeta.textContent = `${apiKeySourceLabel(response.settings.apiKeySource)} Active: ${response.settings.apiKeyMasked}`;
     promptRulesInput.value = response.settings.commentRules || "";
+    showzReplyRulesInput.value = response.settings.showzReplyRules || "";
     submitDelayInput.value = response.settings.submitDelaySeconds ?? 15;
+    showzReplyDelayInput.value = response.settings.showzReplyDelaySeconds ?? 30;
   }
   setSettingsStatus("Defaults restored.");
 });
