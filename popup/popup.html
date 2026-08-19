@@ -44,7 +44,10 @@
       </div>
 
       <div class="showz-actions">
-        <button id="showzBtn" class="secondary site-btn showz-btn">ShowZ Replies (2 products)</button>
+        <button id="showzBtn" class="secondary site-btn showz-btn">ShowZ Reply</button>
+        <button id="stopAgentBtn" class="secondary danger-btn showz-stop-agent-btn" disabled>
+          Stop Agent
+        </button>
       </div>
 
       <div id="assistPanel" class="assist-panel panel hidden">
@@ -135,7 +138,7 @@
 
         <div class="field">
           <label for="showzReplyDelayInput">ShowZ reply delay (seconds)</label>
-          <p class="field-hint">Wait time after filling a ShowZ reply before clicking Submit.</p>
+          <p class="field-hint">Unused when fill-only mode is active (reply is not auto-submitted).</p>
           <input id="showzReplyDelayInput" type="number" min="1" max="120" step="1" />
         </div>
 

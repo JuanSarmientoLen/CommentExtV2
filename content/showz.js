@@ -361,21 +361,47 @@ function getTopLevelItemByIndex(index) {
   return item;
 }
 
-async function waitForReplyForm(item, timeoutMs = 15000) {
+function findTopLevelItemByAuthorAndText(author, text) {
+  for (const item of getTopLevelReviewItems()) {
+    if (!isEligibleTopLevelComment(item)) continue;
+    if (getAuthorName(item) === author && getCommentText(item) === text) return item;
+  }
+  return null;
+}
+
+async function waitForReplyForm(item, timeoutMs = 15000, requireSubmit = true) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (abortRequested) throw new Error("Stopped by user");
     const textarea = findReplyTextarea(item);
     const submitBtn = findReplySubmitButton(item);
-    if (textarea && submitBtn) return { textarea, submitBtn };
+    if (textarea && (!requireSubmit || submitBtn)) {
+      return { textarea, submitBtn };
+    }
     await sleep(300);
   }
   throw new Error("Reply form not ready");
 }
 
-async function executeReply(commentIndex, replyText, submitDelayMs = 30000) {
+async function executeReply(
+  commentIndex,
+  replyText,
+  submitDelayMs = 30000,
+  author = "",
+  text = "",
+  fillOnly = false
+) {
   abortRequested = false;
-  const item = getTopLevelItemByIndex(commentIndex);
+  let item = null;
+
+  try {
+    item = getTopLevelItemByIndex(commentIndex);
+  } catch (_) {
+    if (author || text) {
+      item = findTopLevelItemByAuthorAndText(author, text);
+    }
+    if (!item) throw new Error(`Comment not found on page (index ${commentIndex})`);
+  }
 
   const likeBtn = findLikeButton(item);
   if (likeBtn) {
@@ -388,7 +414,7 @@ async function executeReply(commentIndex, replyText, submitDelayMs = 30000) {
   activateClick(replyBtn);
   await sleep(800);
 
-  const { textarea, submitBtn } = await waitForReplyForm(item);
+  const { textarea } = await waitForReplyForm(item, 15000, false);
 
   textarea.focus();
   textarea.value = replyText;
@@ -399,6 +425,11 @@ async function executeReply(commentIndex, replyText, submitDelayMs = 30000) {
     throw new Error("Failed to fill reply textarea");
   }
 
+  if (fillOnly) {
+    return { filled: true };
+  }
+
+  const { submitBtn } = await waitForReplyForm(item);
   const waitMs = Math.max(1000, Math.min(120000, Number(submitDelayMs) || 30000));
   await sleep(waitMs);
 
@@ -460,7 +491,10 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           await executeReply(
             message.commentIndex,
             message.replyText,
-            message.submitDelayMs
+            message.submitDelayMs,
+            message.author,
+            message.text,
+            message.fillOnly
           )
         );
         return;

@@ -548,6 +548,13 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "STOP_AGENT") {
+    stopShowZAgent().then(() => {
+      sendResponse({ ok: true, active: isCursorAgentActive() });
+    });
+    return true;
+  }
+
   if (message.type === "STOP_RUN") {
     abortRun();
     sendResponse({ ok: true });
@@ -566,6 +573,7 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         logs: data[UI_LOG_KEY] || [],
         platform: platform.os,
         isAndroid: platform.os === "android",
+        agentActive: isCursorAgentActive(),
       });
     });
     return true;

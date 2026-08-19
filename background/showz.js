@@ -1,10 +1,5 @@
 const SHOWZ_LISTING_URL = "https://showzstore.com/New-Update/";
-const SHOWZ_PRODUCTS_PER_RUN = 2;
 const SHOWZ_CONTENT_FILES = ["content/showz.js"];
-
-function randomReplyCount() {
-  return 2 + Math.floor(Math.random() * 2);
-}
 
 function shuffleItems(items) {
   const copy = [...items];
@@ -15,8 +10,37 @@ function shuffleItems(items) {
   return copy;
 }
 
+function notifyAgentStatus(active) {
+  browser.runtime.sendMessage({ type: "AGENT_STATUS", active }).catch(() => {});
+}
+
 async function sendShowzMessage(tabId, message, timeout = MESSAGE_TIMEOUT) {
   return sendTabMessage(tabId, message, timeout, SHOWZ_CONTENT_FILES);
+}
+
+async function ensureShowZAgent() {
+  if (isCursorAgentActive()) {
+    log("Using active Cursor agent.");
+    return;
+  }
+
+  log("Starting Cursor agent (stays active until you click Stop Agent)...");
+  await verifyCursorConnection();
+  await warmupCursorAgent((message) => log(message));
+  notifyAgentStatus(true);
+}
+
+async function stopShowZAgent() {
+  if (!isCursorAgentActive()) {
+    log("Cursor agent is not running.");
+    notifyAgentStatus(false);
+    return;
+  }
+
+  await archiveCursorAgent();
+  notifyAgentStatus(false);
+  log("Cursor agent stopped.");
+  updateStatus("idle", "Agent stopped");
 }
 
 async function generateReply(prompt) {
@@ -31,48 +55,47 @@ async function generateReply(prompt) {
   return reply;
 }
 
-async function processShowZProduct(productTab, product, repliesCount) {
+async function replyOnShowZProduct(productTab, product) {
+  const settings = await getSettings();
   const context = await sendShowzMessage(productTab.id, { type: "GET_REPLY_CONTEXT" });
   const eligible = context.eligibleComments || [];
 
   if (!eligible.length) {
-    log(`No eligible comments on ${product.title || product.url}. Skipping product.`);
-    return [];
+    log(`No eligible comments on ${product.title || product.url}.`);
+    return null;
   }
 
-  const picked = shuffleItems(eligible).slice(0, Math.min(repliesCount, eligible.length));
-  const postedReplies = [];
-  const settings = await getSettings();
+  const comment = shuffleItems(eligible)[0];
+  log(`Replying to comment by ${comment.author}:\n${comment.text}`);
 
-  for (const comment of picked) {
-    checkStop();
-    log(`Replying to comment by ${comment.author}:\n${comment.text}`);
+  const prompt = await buildReplyPrompt(
+    context.description,
+    comment.text,
+    context.comments,
+    comment.author
+  );
+  const replyText = await generateReply(prompt);
 
-    const prompt = await buildReplyPrompt(
-      context.description,
-      comment.text,
-      context.comments,
-      comment.author
-    );
-    const replyText = await generateReply(prompt);
+  const fillResult = await sendShowzMessage(productTab.id, {
+    type: "EXECUTE_REPLY",
+    commentIndex: comment.index,
+    author: comment.author,
+    text: comment.text,
+    replyText,
+    fillOnly: true,
+    submitDelayMs: settings.showzReplyDelayMs,
+  });
 
-    await sendShowzMessage(productTab.id, {
-      type: "EXECUTE_REPLY",
-      commentIndex: comment.index,
-      replyText,
-      submitDelayMs: settings.showzReplyDelayMs,
-    });
-
-    postedReplies.push({
-      author: comment.author,
-      original: comment.text,
-      reply: replyText,
-    });
-    log(`Posted reply to ${comment.author}:\n${replyText}`);
-    await sleep(1500);
+  if (!fillResult?.filled) {
+    throw new Error("Failed to fill ShowZ reply");
   }
 
-  return postedReplies;
+  log(`Reply filled for ${comment.author} (submit manually if needed):\n${replyText}`);
+  return {
+    author: comment.author,
+    original: comment.text,
+    reply: replyText,
+  };
 }
 
 async function runShowZReplies() {
@@ -81,69 +104,55 @@ async function runShowZReplies() {
   runState.stopRequested = false;
   runState.managedTabIds = new Set();
   startKeepalive();
-  updateStatus("running", "ShowZ replies...");
+  updateStatus("running", "ShowZ reply...");
 
   try {
-    await archiveCursorAgent();
     await clearExpiredHistory();
-    log("--- ShowZ reply run started ---");
-    log("Opening ShowZ New-Update page...");
+    log("--- ShowZ reply started ---");
+    await ensureShowZAgent();
 
     checkStop();
     const listingTab = await createManagedTab(SHOWZ_LISTING_URL, true);
     const history = await getHistory();
-    const usedUrls = new Set();
 
     const pickResponse = await sendShowzMessage(listingTab.id, {
       type: "PICK_RANDOM_PRODUCTS",
       history,
       used: [],
-      count: SHOWZ_PRODUCTS_PER_RUN,
+      count: 1,
     });
 
-    const products = pickResponse?.products || [];
-    if (!products.length) {
+    const product = pickResponse?.products?.[0];
+    if (!product) {
       throw new Error(
         `No eligible ShowZ products found (${pickResponse?.totalProducts ?? 0} on page).`
       );
     }
 
-    log(`Selected ${products.length} random product(s) for replies.`);
+    log(`Selected product: ${product.title || product.url}`);
 
-    const allReplies = [];
+    const productTab = await createManagedTab(product.url, true);
+    await browser.tabs.update(productTab.id, { active: true });
+    await sleep(1200);
 
-    for (const product of products) {
-      checkStop();
-      log(`Opening product: ${product.title || product.url}`);
-
-      const productTab = await createManagedTab(product.url, true);
-      await browser.tabs.update(productTab.id, { active: true });
-      await sleep(1200);
-
-      const repliesCount = randomReplyCount();
-      log(`Planning ${repliesCount} reply(s) on this product...`);
-
-      const posted = await processShowZProduct(productTab, product, repliesCount);
-      allReplies.push(...posted);
-
-      const summary = posted.map((entry) => entry.reply).join("\n---\n");
-      await addToHistory(product.url, {
-        title: product.title,
-        site: "ShowZ",
-        comment: summary || "ShowZ replies posted",
-      });
-      usedUrls.add(product.url);
-
-      await browser.tabs.remove(productTab.id);
-      runState.managedTabIds.delete(productTab.id);
+    const posted = await replyOnShowZProduct(productTab, product);
+    if (!posted) {
+      throw new Error("No eligible comment to reply to on selected product.");
     }
+
+    await addToHistory(product.url, {
+      title: product.title,
+      site: "ShowZ",
+      comment: posted.reply,
+    });
 
     await browser.tabs.remove(listingTab.id);
     runState.managedTabIds.delete(listingTab.id);
+    runState.managedTabIds.delete(productTab.id);
 
-    log(`ShowZ run complete. Posted ${allReplies.length} reply(s) across ${products.length} product(s).`);
-    updateStatus("done", "ShowZ replies finished");
-    log("All done.");
+    log("ShowZ reply complete. Product tab left open with reply filled.");
+    updateStatus("done", isCursorAgentActive() ? "Agent ready" : "Finished");
+    log("Cursor agent still active — click Stop Agent when done.");
   } catch (err) {
     await broadcastAbort();
     await closeManagedTabs();
@@ -158,6 +167,5 @@ async function runShowZReplies() {
     }
   } finally {
     stopKeepalive();
-    await archiveCursorAgent();
   }
 }

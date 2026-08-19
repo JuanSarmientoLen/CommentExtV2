@@ -5,6 +5,7 @@ const stopBtn = document.getElementById("stopBtn");
 const gundamitOneBtn = document.getElementById("gundamitOneBtn");
 const chowbrickOneBtn = document.getElementById("chowbrickOneBtn");
 const showzBtn = document.getElementById("showzBtn");
+const stopAgentBtn = document.getElementById("stopAgentBtn");
 const assistBtn = document.getElementById("assistBtn");
 const assistStopBtn = document.getElementById("assistStopBtn");
 const assistPanel = document.getElementById("assistPanel");
@@ -95,6 +96,12 @@ function renderLogs(logs) {
   logEl.innerHTML = "";
   for (const entry of logs) {
     addLogEntry(entry);
+  }
+}
+
+function setAgentActive(active) {
+  if (stopAgentBtn) {
+    stopAgentBtn.disabled = !active;
   }
 }
 
@@ -274,6 +281,10 @@ async function loadPersistedState() {
   if (state.isAndroid) {
     applyPlatformUi(true);
   }
+
+  if (typeof state.agentActive === "boolean") {
+    setAgentActive(state.agentActive);
+  }
 }
 
 startBtn.addEventListener("click", () => {
@@ -290,6 +301,13 @@ chowbrickOneBtn.addEventListener("click", () => {
 
 showzBtn.addEventListener("click", () => {
   startShowZWithPermission();
+});
+
+stopAgentBtn?.addEventListener("click", () => {
+  browser.runtime.sendMessage({ type: "STOP_AGENT" }).then((response) => {
+    setAgentActive(!!response?.active);
+    setStatus("idle", "Agent stopped");
+  });
 });
 
 assistBtn.addEventListener("click", () => {
@@ -383,6 +401,9 @@ browser.runtime.onMessage.addListener((message) => {
   if (message.type === "STATUS") {
     setStatus(message.status, message.detail);
     setRunning(message.status === "running");
+  }
+  if (message.type === "AGENT_STATUS") {
+    setAgentActive(!!message.active);
   }
 });
 

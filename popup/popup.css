@@ -206,11 +206,14 @@ header h1 {
 }
 
 .showz-actions {
+  display: flex;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
-.showz-btn {
-  width: 100%;
+.showz-btn,
+.showz-stop-agent-btn {
+  flex: 1;
 }
 
 .site-btn {

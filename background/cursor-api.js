@@ -255,3 +255,7 @@ async function archiveCursorAgent() {
     /* best effort */
   }
 }
+
+function isCursorAgentActive() {
+  return !!commentAgentId;
+}

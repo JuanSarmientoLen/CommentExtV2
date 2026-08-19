@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OneMaster CommentExt",
-  "version": "4.6.0",
+  "version": "4.7.0",
   "description": "Automates product comments on Gundamit, Chowbrick, and ShowZ using the Cursor API. Desktop full-auto; Firefox Android assist mode.",
   "author": "OneMaster",
   "icons": {
