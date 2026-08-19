@@ -133,6 +133,8 @@ function getAuthorName(item) {
     ".member_name",
     ".name a",
     ".name",
+    ".review_main .user",
+    ".review_info .name",
   ];
   for (const selector of selectors) {
     const el = item.querySelector(selector);
@@ -307,6 +309,8 @@ async function fetchComments(proId) {
 }
 
 async function getReplyContext() {
+  await ensureReviewListReady();
+
   const proId = getProductId();
   if (!proId) throw new Error("Could not determine product ID");
 
@@ -361,12 +365,107 @@ function getTopLevelItemByIndex(index) {
   return item;
 }
 
-function findTopLevelItemByAuthorAndText(author, text) {
-  for (const item of getTopLevelReviewItems()) {
-    if (!isEligibleTopLevelComment(item)) continue;
-    if (getAuthorName(item) === author && getCommentText(item) === text) return item;
+function normalizeCommentText(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeAuthorName(name) {
+  return String(name || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function commentTextMatches(left, right) {
+  const a = normalizeCommentText(left);
+  const b = normalizeCommentText(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 24 && b.includes(a.slice(0, 24))) return true;
+  if (b.length >= 24 && a.includes(b.slice(0, 24))) return true;
+  return a.includes(b) || b.includes(a);
+}
+
+async function ensureReviewListReady(timeoutMs = 25000) {
+  const anchors = [
+    "#review_list",
+    ".review_list",
+    ".goods_review_list",
+    ".goods_review",
+    ".review_box",
+    "#CustomerReviews",
+  ];
+  for (const selector of anchors) {
+    const el = document.querySelector(selector);
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "instant" });
+      break;
+    }
   }
+
+  for (const el of document.querySelectorAll("a, button, span, li, div")) {
+    const label = (el.textContent || "").trim();
+    if (!/^(customer )?reviews?(\s*\(\d+\))?$/i.test(label)) continue;
+    if (!isVisible(el)) continue;
+    activateClick(el);
+    await sleep(1000);
+    break;
+  }
+
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (abortRequested) throw new Error("Stopped by user");
+    if (getTopLevelReviewItems().length) return;
+    await sleep(400);
+  }
+
+  throw new Error("Review list not loaded on page");
+}
+
+function findTopLevelItemByAuthorAndText(author, text) {
+  const normalizedAuthor = normalizeAuthorName(author);
+  const items = getTopLevelReviewItems().filter(isEligibleTopLevelComment);
+
+  for (const item of items) {
+    if (
+      normalizeAuthorName(getAuthorName(item)) === normalizedAuthor &&
+      commentTextMatches(getCommentText(item), text)
+    ) {
+      return item;
+    }
+  }
+
+  for (const item of items) {
+    if (commentTextMatches(getCommentText(item), text)) return item;
+  }
+
+  if (normalizedAuthor) {
+    for (const item of items) {
+      if (normalizeAuthorName(getAuthorName(item)) === normalizedAuthor) return item;
+    }
+  }
+
   return null;
+}
+
+function resolveCommentTarget(commentIndex, author, text) {
+  const byAuthorText = findTopLevelItemByAuthorAndText(author, text);
+  if (byAuthorText) return byAuthorText;
+
+  try {
+    return getTopLevelItemByIndex(commentIndex);
+  } catch (_) {
+    /* try eligible pool below */
+  }
+
+  const eligible = getTopLevelReviewItems().filter(isEligibleTopLevelComment);
+  if (eligible.length === 1) return eligible[0];
+
+  throw new Error(
+    `Comment not found on page (${author || "unknown author"}, index ${commentIndex})`
+  );
 }
 
 async function waitForReplyForm(item, timeoutMs = 15000, requireSubmit = true) {
@@ -392,16 +491,8 @@ async function executeReply(
   fillOnly = false
 ) {
   abortRequested = false;
-  let item = null;
-
-  try {
-    item = getTopLevelItemByIndex(commentIndex);
-  } catch (_) {
-    if (author || text) {
-      item = findTopLevelItemByAuthorAndText(author, text);
-    }
-    if (!item) throw new Error(`Comment not found on page (index ${commentIndex})`);
-  }
+  await ensureReviewListReady();
+  const item = resolveCommentTarget(commentIndex, author, text);
 
   const likeBtn = findLikeButton(item);
   if (likeBtn) {
@@ -477,6 +568,15 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           product.url = normalizeProductUrl(product.url);
         }
         sendResponse({ products: picked, totalProducts: products.length });
+        return;
+      }
+
+      if (message.type === "ENSURE_REVIEWS") {
+        await ensureReviewListReady();
+        sendResponse({
+          ok: true,
+          count: getTopLevelReviewItems().length,
+        });
         return;
       }
 

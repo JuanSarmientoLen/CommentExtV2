@@ -76,6 +76,12 @@ async function replyOnShowZProduct(productTab, product) {
   );
   const replyText = await generateReply(prompt);
 
+  log("Reloading product page before filling reply...");
+  await browser.tabs.update(productTab.id, { url: product.url, active: true });
+  await waitForTabComplete(productTab.id);
+  await sleep(2000);
+  await sendShowzMessage(productTab.id, { type: "ENSURE_REVIEWS" });
+
   const fillResult = await sendShowzMessage(productTab.id, {
     type: "EXECUTE_REPLY",
     commentIndex: comment.index,
