@@ -1,4 +1,4 @@
-# Firefox Add-ons (AMO) Submission — OneMaster CommentExt v4.5.0
+# Firefox Add-ons (AMO) Submission — OneMaster CommentExt v4.7.1
 
 ## Before you upload
 
@@ -13,12 +13,12 @@
 
    Alternative: [web-ext build](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/#packaging-your-extension) also produces AMO-compatible zips.
 
-3. Upload `onemaster-commentext-4.5.0.zip` at:
+3. Upload `onemaster-commentext-4.7.1.zip` at:
    https://addons.mozilla.org/developers/addon/submit/
 
 ## AMO listing checklist
 
-- **Version:** 4.5.0
+- **Version:** 4.7.1
 - **Extension ID:** `commentext@commentext.local`
 - **Min Firefox:** 140.0 (desktop and Android)
 - **Privacy policy:** Paste or host `PRIVACY.md` and link it in the AMO developer dashboard
@@ -28,7 +28,7 @@
 
 ## Suggested reviewer notes
 
-> This extension automates posting user-generated product comments on Gundamit and Chowbrick. On desktop, it runs a full multi-tab workflow from the popup. On Firefox for Android, it offers assist mode: the user opens a product page, then taps "Comment on Current Page" to generate and submit one comment on that tab. Product page text is sent to api.cursor.com using the user’s own API key. No remote code is loaded. Each run is started manually from the popup.
+> This extension helps users post product comments on Gundamit, Chowbrick, and ShowZ Store. On desktop, Gundamit/Chowbrick use a multi-tab auto-run from the popup. ShowZ picks one random product, likes a comment, opens the reply form, and fills generated text (user submits manually). A Cursor cloud agent stays warm until the user clicks Stop Agent. On Firefox for Android, assist mode lets the user open a product page and generate one comment on that tab. Product page text is sent to api.cursor.com using the user’s own API key. No remote code is loaded. Each action is started manually from the popup.
 
 ## After changing the extension ID
 
