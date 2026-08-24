@@ -146,6 +146,19 @@ function getAuthorName(item) {
       if (text) return text;
     }
   }
+
+  const userArea = item.querySelector(
+    ".user_name, .review_user, .review_info, .user, .review_name"
+  );
+  if (userArea) {
+    for (const link of userArea.querySelectorAll("a")) {
+      const text = (link.textContent || "").trim();
+      if (text && !/^(premium member|jointed|comments|location|likes)$/i.test(text)) {
+        return text;
+      }
+    }
+  }
+
   return "";
 }
 
@@ -161,7 +174,10 @@ function getNestedReplyItems(item) {
   const replyRoot =
     item.querySelector(":scope > .review_reply") ||
     item.querySelector(":scope > .review_reply_list") ||
-    item.querySelector(":scope > .reply_list");
+    item.querySelector(":scope > .reply_list") ||
+    item.querySelector(".review_reply") ||
+    item.querySelector(".review_reply_list") ||
+    item.querySelector(".reply_list");
   if (!replyRoot) return [];
   return [...replyRoot.querySelectorAll(".review_item")];
 }
@@ -174,20 +190,28 @@ function oneMasterRepliedInThread(item) {
   return false;
 }
 
-function getTopLevelReviewItems() {
+function getTopLevelReviewItems(root = document) {
   const list =
-    document.querySelector("#review_list") ||
-    document.querySelector(".review_list") ||
-    document.querySelector(".goods_review_list") ||
-    document.querySelector(".review_box");
+    root.querySelector("#review_list") ||
+    root.querySelector(".review_list") ||
+    root.querySelector(".goods_review_list") ||
+    root.querySelector(".review_box");
 
   if (list) {
     const direct = [...list.querySelectorAll(":scope > .review_item")];
     if (direct.length) return direct;
   }
 
-  const all = [...document.querySelectorAll(".review_item")];
+  const all = [...root.querySelectorAll(".review_item")];
   return all.filter((item) => !item.parentElement?.closest(".review_item"));
+}
+
+function hasOneMasterActivityInRoot(root) {
+  if (!root) return false;
+  for (const item of root.querySelectorAll(".review_item")) {
+    if (isOneMasterAuthor(getAuthorName(item))) return true;
+  }
+  return false;
 }
 
 function isEligibleTopLevelComment(item) {
@@ -345,7 +369,7 @@ async function openReplyForm(item) {
   await waitForReplyForm(item, 15000, false);
 }
 
-async function fetchComments(proId) {
+async function fetchReviewListDoc(proId) {
   const body = new URLSearchParams({
     page: "0",
     ProId: String(proId),
@@ -361,15 +385,21 @@ async function fetchComments(proId) {
   });
 
   const html = await response.text();
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  return [...doc.querySelectorAll(".review_item .review_main .content")]
+  return new DOMParser().parseFromString(html, "text/html");
+}
+
+function extractCommentTexts(root) {
+  return [...root.querySelectorAll(".review_item .review_main .content")]
     .map((el) => el.textContent.trim())
     .filter(Boolean);
 }
 
-async function getReplyContext() {
-  await ensureReviewListReady();
+async function fetchComments(proId) {
+  const doc = await fetchReviewListDoc(proId);
+  return extractCommentTexts(doc);
+}
 
+async function getReplyContext() {
   const proId = getProductId();
   if (!proId) throw new Error("Could not determine product ID");
 
@@ -384,16 +414,29 @@ async function getReplyContext() {
     document.querySelector(".prod_description")?.innerText?.trim() ||
     "";
 
+  let reviewRoot = document;
   let comments = [];
+
   try {
-    comments = await fetchComments(proId);
+    reviewRoot = await fetchReviewListDoc(proId);
+    comments = extractCommentTexts(reviewRoot);
   } catch (_) {
-    comments = [...document.querySelectorAll(".review_item .review_main .content")]
-      .map((el) => el.textContent.trim())
-      .filter(Boolean);
+    comments = extractCommentTexts(document);
   }
 
-  const topLevel = getTopLevelReviewItems();
+  const hasOneMasterActivity = hasOneMasterActivityInRoot(reviewRoot);
+  if (hasOneMasterActivity) {
+    return {
+      proId,
+      title,
+      description,
+      comments,
+      eligibleComments: [],
+      hasOneMasterActivity: true,
+    };
+  }
+
+  const topLevel = getTopLevelReviewItems(reviewRoot);
   const eligibleComments = [];
 
   topLevel.forEach((item, index) => {
@@ -411,6 +454,7 @@ async function getReplyContext() {
     description,
     comments,
     eligibleComments,
+    hasOneMasterActivity: false,
   };
 }
 

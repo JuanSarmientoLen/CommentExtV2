@@ -1,4 +1,5 @@
 const COOLDOWN_MS = 4 * 24 * 60 * 60 * 1000;
+const ONEMASTER_PATTERN = /one\s*-?\s*master/i;
 let abortRequested = false;
 
 function sleep(ms) {
@@ -158,7 +159,56 @@ function activateClick(el) {
   el.click();
 }
 
-async function fetchComments(proId) {
+function isOneMasterAuthor(name) {
+  return ONEMASTER_PATTERN.test(String(name || "").trim());
+}
+
+function getAuthorName(item) {
+  const selectors = [
+    ".user_nickName",
+    ".user_name .user_nickName",
+    ".review_user a",
+    ".review_user",
+    ".review_name",
+    ".user_name",
+    ".member_name",
+    ".name a",
+    ".name",
+    ".review_main .user",
+    ".review_info .name",
+  ];
+  for (const selector of selectors) {
+    const el = item.querySelector(selector);
+    if (el) {
+      const text = (el.textContent || "").trim();
+      if (text) return text;
+    }
+  }
+
+  const userArea = item.querySelector(
+    ".user_name, .review_user, .review_info, .user, .review_name"
+  );
+  if (userArea) {
+    for (const link of userArea.querySelectorAll("a")) {
+      const text = (link.textContent || "").trim();
+      if (text && !/^(premium member|jointed|comments|location|likes)$/i.test(text)) {
+        return text;
+      }
+    }
+  }
+
+  return "";
+}
+
+function hasOneMasterActivityInRoot(root) {
+  if (!root) return false;
+  for (const item of root.querySelectorAll(".review_item")) {
+    if (isOneMasterAuthor(getAuthorName(item))) return true;
+  }
+  return false;
+}
+
+async function fetchReviewListDoc(proId) {
   const body = new URLSearchParams({
     page: "0",
     ProId: String(proId),
@@ -174,10 +224,18 @@ async function fetchComments(proId) {
   });
 
   const html = await response.text();
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  return [...doc.querySelectorAll(".review_item .review_main .content")]
+  return new DOMParser().parseFromString(html, "text/html");
+}
+
+function extractCommentTexts(root) {
+  return [...root.querySelectorAll(".review_item .review_main .content")]
     .map((el) => el.textContent.trim())
     .filter(Boolean);
+}
+
+async function fetchComments(proId) {
+  const doc = await fetchReviewListDoc(proId);
+  return extractCommentTexts(doc);
 }
 
 async function extractProductData() {
@@ -196,15 +254,18 @@ async function extractProductData() {
     "";
 
   let comments = [];
+  let hasOneMasterActivity = false;
+
   try {
-    comments = await fetchComments(proId);
+    const reviewRoot = await fetchReviewListDoc(proId);
+    comments = extractCommentTexts(reviewRoot);
+    hasOneMasterActivity = hasOneMasterActivityInRoot(reviewRoot);
   } catch (_) {
-    comments = [...document.querySelectorAll(".review_item .review_main .content")]
-      .map((el) => el.textContent.trim())
-      .filter(Boolean);
+    comments = extractCommentTexts(document);
+    hasOneMasterActivity = hasOneMasterActivityInRoot(document);
   }
 
-  return { proId, title, description, comments };
+  return { proId, title, description, comments, hasOneMasterActivity };
 }
 
 function getPageInfo() {

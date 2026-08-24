@@ -344,6 +344,22 @@ async function processSite(site, commentsPerSite = COMMENTS_PER_SITE) {
     const productTab = await createManagedTab(product.url, true);
     const data = await sendTabMessage(productTab.id, { type: "EXTRACT_DATA" });
 
+    if (data.hasOneMasterActivity) {
+      await skipBlockedProduct({
+        site,
+        product,
+        listingTab,
+        productTab,
+        usedUrls,
+        commentsPerSite,
+        posted,
+        attempts,
+        maxAttempts,
+        reason: "OneMaster already commented or replied on this product",
+      });
+      continue;
+    }
+
     await browser.tabs.update(productTab.id, { active: true });
     await sleep(800);
 

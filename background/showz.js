@@ -57,6 +57,14 @@ async function generateReply(prompt) {
 
 async function replyOnShowZProduct(productTab, product) {
   const context = await sendShowzMessage(productTab.id, { type: "GET_REPLY_CONTEXT" });
+
+  if (context.hasOneMasterActivity) {
+    log(
+      `Skipping ${product.title || product.url} — OneMaster already commented or replied on this product.`
+    );
+    return null;
+  }
+
   const eligible = context.eligibleComments || [];
 
   if (!eligible.length) {
@@ -101,6 +109,13 @@ async function replyOnShowZProduct(productTab, product) {
   };
 }
 
+async function reloadShowZListingTab(listingTab) {
+  log("Returning to ShowZ New-Update listing...");
+  await browser.tabs.update(listingTab.id, { url: SHOWZ_LISTING_URL, active: true });
+  await waitForTabComplete(listingTab.id);
+  await sleep(1500);
+}
+
 async function runShowZReplies() {
   if (runState.status === "running") return;
 
@@ -116,31 +131,56 @@ async function runShowZReplies() {
 
     checkStop();
     const listingTab = await createManagedTab(SHOWZ_LISTING_URL, true);
-    const history = await getHistory();
+    const usedUrls = new Set();
+    let posted = null;
+    let product = null;
+    let productTab = null;
+    let attempts = 0;
+    const maxAttempts = Math.max(12, 6);
 
-    const pickResponse = await sendShowzMessage(listingTab.id, {
-      type: "PICK_RANDOM_PRODUCTS",
-      history,
-      used: [],
-      count: 1,
-    });
+    while (!posted && attempts < maxAttempts) {
+      checkStop();
+      attempts += 1;
 
-    const product = pickResponse?.products?.[0];
-    if (!product) {
-      throw new Error(
-        `No eligible ShowZ products found (${pickResponse?.totalProducts ?? 0} on page).`
-      );
+      const history = await getHistory();
+      const pickResponse = await sendShowzMessage(listingTab.id, {
+        type: "PICK_RANDOM_PRODUCTS",
+        history,
+        used: [...usedUrls],
+        count: 1,
+      });
+
+      product = pickResponse?.products?.[0];
+      if (!product) {
+        throw new Error(
+          `No eligible ShowZ products found (${pickResponse?.totalProducts ?? 0} on page, ${usedUrls.size} skipped this run).`
+        );
+      }
+
+      log(`Selected product: ${product.title || product.url}`);
+      usedUrls.add(product.url);
+
+      if (productTab) {
+        try {
+          await browser.tabs.remove(productTab.id);
+        } catch (_) {
+          /* tab may already be closed */
+        }
+        runState.managedTabIds.delete(productTab.id);
+      }
+
+      productTab = await createManagedTab(product.url, true);
+      await browser.tabs.update(productTab.id, { active: true });
+      await sleep(1200);
+
+      posted = await replyOnShowZProduct(productTab, product);
+      if (!posted && attempts < maxAttempts) {
+        await reloadShowZListingTab(listingTab);
+      }
     }
 
-    log(`Selected product: ${product.title || product.url}`);
-
-    const productTab = await createManagedTab(product.url, true);
-    await browser.tabs.update(productTab.id, { active: true });
-    await sleep(1200);
-
-    const posted = await replyOnShowZProduct(productTab, product);
     if (!posted) {
-      throw new Error("No eligible comment to reply to on selected product.");
+      throw new Error("No eligible comment to reply to after checking multiple products.");
     }
 
     await addToHistory(product.url, {
