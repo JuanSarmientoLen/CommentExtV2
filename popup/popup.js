@@ -176,7 +176,7 @@ async function loadSettingsForm() {
   promptRulesInput.value = settings.commentRules || "";
   showzReplyRulesInput.value = settings.showzReplyRules || "";
   submitDelayInput.value = settings.submitDelaySeconds ?? 15;
-  showzReplyDelayInput.value = settings.showzReplyDelaySeconds ?? 30;
+  showzReplyDelayInput.value = settings.showzReplyDelaySeconds ?? 15;
   apiKeyInput.type = "password";
   toggleApiKeyBtn.textContent = "Show";
   setSettingsStatus("");
@@ -389,7 +389,7 @@ resetSettingsBtn.addEventListener("click", async () => {
     promptRulesInput.value = response.settings.commentRules || "";
     showzReplyRulesInput.value = response.settings.showzReplyRules || "";
     submitDelayInput.value = response.settings.submitDelaySeconds ?? 15;
-    showzReplyDelayInput.value = response.settings.showzReplyDelaySeconds ?? 30;
+    showzReplyDelayInput.value = response.settings.showzReplyDelaySeconds ?? 15;
   }
   setSettingsStatus("Defaults restored.");
 });

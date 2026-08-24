@@ -42,6 +42,7 @@ function activateClick(el) {
   el.scrollIntoView({ block: "center", behavior: "instant" });
   el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
   el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   el.click();
 }
 
@@ -126,6 +127,8 @@ function getProductId() {
 
 function getAuthorName(item) {
   const selectors = [
+    ".user_nickName",
+    ".user_name .user_nickName",
     ".review_user a",
     ".review_user",
     ".review_name",
@@ -196,14 +199,30 @@ function isEligibleTopLevelComment(item) {
   return true;
 }
 
+function isKengAuthor(name) {
+  return /^keng$/i.test(String(name || "").trim());
+}
+
+async function likeKengComments() {
+  for (const item of document.querySelectorAll(".review_item")) {
+    if (!isKengAuthor(getAuthorName(item))) continue;
+    const likeBtn = findLikeButton(item);
+    if (!likeBtn || !isVisible(likeBtn)) continue;
+    activateClick(likeBtn);
+    await sleep(600);
+  }
+}
+
 function findLikeButton(item) {
   const selectors = [
+    "a.like",
+    ".likeWrapper a.like",
+    ".like a.like",
     "a.good",
     ".review_like a",
     ".review_like",
     ".like_btn",
     ".operate_like",
-    "a.like",
     ".thumb_up",
     ".review_operate a.good",
     "[class*='like'] a",
@@ -224,49 +243,69 @@ function findLikeButton(item) {
 
 function findReplyButton(item) {
   const selectors = [
-    ".review_reply_btn",
     "a.reply_btn",
+    ".reply .edit a.reply_btn",
+    ".reply .edit a",
+    ".review_reply_btn",
     ".btn_reply",
-    ".reply a",
-    "a.reply",
     ".review_operate a.reply",
   ];
   for (const selector of selectors) {
     const el = item.querySelector(selector);
-    if (isVisible(el)) return el;
+    if (isVisible(el) && !el.closest(".write_reply")) return el;
   }
 
-  for (const el of item.querySelectorAll("a, button, span")) {
-    const text = (el.textContent || "").trim();
-    if (/^reply$/i.test(text)) return el;
+  for (const el of item.querySelectorAll(".reply .edit a, a.reply_btn")) {
+    if (isVisible(el) && !el.closest(".write_reply")) return el;
   }
   return null;
 }
 
+function getWriteReplyBox(item) {
+  return item.querySelector(".write_reply");
+}
+
+function isReplyFormOpen(item) {
+  const writeReply = getWriteReplyBox(item);
+  if (!writeReply) return false;
+  if (writeReply.classList.contains("hide")) return false;
+  return isVisible(writeReply);
+}
+
 function findReplyTextarea(item) {
+  const writeReply = getWriteReplyBox(item);
+  if (writeReply && !writeReply.classList.contains("hide")) {
+    const scoped = writeReply.querySelector(
+      "textarea[name='ReviewComment'], textarea.review_content, textarea"
+    );
+    if (scoped && !scoped.disabled && isVisible(scoped)) return scoped;
+  }
+
   const selectors = [
+    ".write_reply:not(.hide) textarea[name='ReviewComment']",
     "textarea.review_content",
     ".reply_box textarea",
     ".review_reply_box textarea",
     ".reply_text textarea",
+    "textarea[name='ReviewComment']",
     "textarea[name='content']",
-    "textarea",
   ];
   for (const selector of selectors) {
     const el = item.querySelector(selector);
-    if (el && !el.disabled) return el;
+    if (el && !el.disabled && isVisible(el)) return el;
   }
   return null;
 }
 
 function findReplySubmitButton(item) {
-  const form =
-    item.querySelector(".review_reply_form") ||
-    item.querySelector(".reply_form") ||
-    item.querySelector("form");
+  const writeReply =
+    item.querySelector(".write_reply:not(.hide)") || getWriteReplyBox(item);
+  const scope = writeReply || item;
 
-  const scope = form || item;
   const selectors = [
+    "button.textbtn",
+    "button.btn.textbtn",
+    ".write_reply button.btn",
     "input[type='submit']",
     "button[type='submit']",
     ".btn_submit",
@@ -276,14 +315,34 @@ function findReplySubmitButton(item) {
   ];
   for (const selector of selectors) {
     const el = scope.querySelector(selector);
-    if (isVisible(el)) return el;
+    if (isVisible(el) && !el.closest(".edit")) return el;
   }
 
-  for (const el of scope.querySelectorAll("a, button, input[type=button]")) {
+  for (const el of scope.querySelectorAll("button, input[type=button], input[type=submit]")) {
+    if (el.closest(".edit")) continue;
     const text = (el.textContent || el.value || "").trim().toLowerCase();
     if (text === "submit" || text === "reply" || text === "post") return el;
   }
   return null;
+}
+
+async function openReplyForm(item) {
+  const replyBtn = findReplyButton(item);
+  if (!replyBtn) throw new Error("Reply button not found");
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    activateClick(replyBtn);
+    await sleep(700);
+    if (isReplyFormOpen(item)) break;
+
+    const writeReply = getWriteReplyBox(item);
+    if (writeReply?.classList.contains("hide")) {
+      writeReply.classList.remove("hide");
+      await sleep(300);
+    }
+  }
+
+  await waitForReplyForm(item, 15000, false);
 }
 
 async function fetchComments(proId) {
@@ -474,7 +533,7 @@ async function waitForReplyForm(item, timeoutMs = 15000, requireSubmit = true) {
     if (abortRequested) throw new Error("Stopped by user");
     const textarea = findReplyTextarea(item);
     const submitBtn = findReplySubmitButton(item);
-    if (textarea && (!requireSubmit || submitBtn)) {
+    if (textarea && isReplyFormOpen(item) && (!requireSubmit || submitBtn)) {
       return { textarea, submitBtn };
     }
     await sleep(300);
@@ -485,13 +544,13 @@ async function waitForReplyForm(item, timeoutMs = 15000, requireSubmit = true) {
 async function executeReply(
   commentIndex,
   replyText,
-  submitDelayMs = 30000,
+  _submitDelayMs = 15000,
   author = "",
-  text = "",
-  fillOnly = false
+  text = ""
 ) {
   abortRequested = false;
   await ensureReviewListReady();
+  await likeKengComments();
   const item = resolveCommentTarget(commentIndex, author, text);
 
   const likeBtn = findLikeButton(item);
@@ -500,14 +559,11 @@ async function executeReply(
     await sleep(600);
   }
 
-  const replyBtn = findReplyButton(item);
-  if (!replyBtn) throw new Error("Reply button not found");
-  activateClick(replyBtn);
-  await sleep(800);
-
+  await openReplyForm(item);
   const { textarea } = await waitForReplyForm(item, 15000, false);
 
   textarea.focus();
+  textarea.classList.remove("default");
   textarea.value = replyText;
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
   textarea.dispatchEvent(new Event("change", { bubbles: true }));
@@ -516,26 +572,7 @@ async function executeReply(
     throw new Error("Failed to fill reply textarea");
   }
 
-  if (fillOnly) {
-    return { filled: true };
-  }
-
-  const { submitBtn } = await waitForReplyForm(item);
-  const waitMs = Math.max(1000, Math.min(120000, Number(submitDelayMs) || 30000));
-  await sleep(waitMs);
-
-  activateClick(submitBtn);
-
-  const start = Date.now();
-  while (Date.now() - start < 12000) {
-    if (abortRequested) throw new Error("Stopped by user");
-    if (!findReplyTextarea(item) || !isVisible(findReplySubmitButton(item))) {
-      return { submitted: true };
-    }
-    await sleep(300);
-  }
-
-  return { submitted: true };
+  return { filled: true };
 }
 
 browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -573,6 +610,7 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       if (message.type === "ENSURE_REVIEWS") {
         await ensureReviewListReady();
+        await likeKengComments();
         sendResponse({
           ok: true,
           count: getTopLevelReviewItems().length,
@@ -593,8 +631,7 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             message.replyText,
             message.submitDelayMs,
             message.author,
-            message.text,
-            message.fillOnly
+            message.text
           )
         );
         return;

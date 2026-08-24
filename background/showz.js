@@ -56,7 +56,6 @@ async function generateReply(prompt) {
 }
 
 async function replyOnShowZProduct(productTab, product) {
-  const settings = await getSettings();
   const context = await sendShowzMessage(productTab.id, { type: "GET_REPLY_CONTEXT" });
   const eligible = context.eligibleComments || [];
 
@@ -88,15 +87,13 @@ async function replyOnShowZProduct(productTab, product) {
     author: comment.author,
     text: comment.text,
     replyText,
-    fillOnly: true,
-    submitDelayMs: settings.showzReplyDelayMs,
   });
 
   if (!fillResult?.filled) {
     throw new Error("Failed to fill ShowZ reply");
   }
 
-  log(`Reply filled for ${comment.author} (submit manually if needed):\n${replyText}`);
+  log(`Reply filled for ${comment.author} (submit manually):\n${replyText}`);
   return {
     author: comment.author,
     original: comment.text,
@@ -156,7 +153,7 @@ async function runShowZReplies() {
     runState.managedTabIds.delete(listingTab.id);
     runState.managedTabIds.delete(productTab.id);
 
-    log("ShowZ reply complete. Product tab left open with reply filled.");
+    log("ShowZ reply complete. Product tab left open — submit manually if needed.");
     updateStatus("done", isCursorAgentActive() ? "Agent ready" : "Finished");
     log("Cursor agent still active — click Stop Agent when done.");
   } catch (err) {
