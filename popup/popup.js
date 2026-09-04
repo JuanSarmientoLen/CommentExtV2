@@ -11,9 +11,6 @@ const assistStopBtn = document.getElementById("assistStopBtn");
 const assistPanel = document.getElementById("assistPanel");
 const desktopActions = document.getElementById("desktopActions");
 const desktopSiteActions = document.getElementById("desktopSiteActions");
-const infoDesktop = document.getElementById("infoDesktop");
-const infoAssist = document.getElementById("infoAssist");
-const infoBackground = document.getElementById("infoBackground");
 const clearLogBtn = document.getElementById("clearLogBtn");
 const clearHistoryBtn = document.getElementById("clearHistoryBtn");
 const settingsBtn = document.getElementById("settingsBtn");
@@ -28,6 +25,7 @@ const promptRulesInput = document.getElementById("promptRulesInput");
 const showzReplyRulesInput = document.getElementById("showzReplyRulesInput");
 const submitDelayInput = document.getElementById("submitDelayInput");
 const showzReplyDelayInput = document.getElementById("showzReplyDelayInput");
+const autoLikeUsersInput = document.getElementById("autoLikeUsersInput");
 const resetSettingsBtn = document.getElementById("resetSettingsBtn");
 const settingsStatus = document.getElementById("settingsStatus");
 const commentHistoryList = document.getElementById("commentHistoryList");
@@ -50,9 +48,6 @@ function applyPlatformUi(android) {
     desktopActions?.classList.add("hidden");
     desktopSiteActions?.classList.add("hidden");
     assistPanel?.classList.remove("hidden");
-    infoDesktop?.classList.add("hidden");
-    infoAssist?.classList.remove("hidden");
-    infoBackground?.classList.add("hidden");
   }
 }
 
@@ -175,8 +170,9 @@ async function loadSettingsForm() {
   apiKeyMeta.textContent = `${apiKeySourceLabel(settings.apiKeySource)} Active: ${settings.apiKeyMasked}`;
   promptRulesInput.value = settings.commentRules || "";
   showzReplyRulesInput.value = settings.showzReplyRules || "";
+  autoLikeUsersInput.value = settings.autoLikeUsersText || "";
   submitDelayInput.value = settings.submitDelaySeconds ?? 15;
-  showzReplyDelayInput.value = settings.showzReplyDelaySeconds ?? 15;
+  showzReplyDelayInput.value = settings.showzReplyDelaySeconds ?? 10;
   apiKeyInput.type = "password";
   toggleApiKeyBtn.textContent = "Show";
   setSettingsStatus("");
@@ -362,6 +358,7 @@ settingsForm.addEventListener("submit", async (event) => {
       apiKey: apiKeyInput.value.trim(),
       commentRules: promptRulesInput.value,
       showzReplyRules: showzReplyRulesInput.value,
+      autoLikeUsersText: autoLikeUsersInput.value,
       submitDelaySeconds: Number(submitDelayInput.value),
       showzReplyDelaySeconds: Number(showzReplyDelayInput.value),
     },
@@ -388,8 +385,9 @@ resetSettingsBtn.addEventListener("click", async () => {
     apiKeyMeta.textContent = `${apiKeySourceLabel(response.settings.apiKeySource)} Active: ${response.settings.apiKeyMasked}`;
     promptRulesInput.value = response.settings.commentRules || "";
     showzReplyRulesInput.value = response.settings.showzReplyRules || "";
+    autoLikeUsersInput.value = response.settings.autoLikeUsersText || "";
     submitDelayInput.value = response.settings.submitDelaySeconds ?? 15;
-    showzReplyDelayInput.value = response.settings.showzReplyDelaySeconds ?? 15;
+    showzReplyDelayInput.value = response.settings.showzReplyDelaySeconds ?? 10;
   }
   setSettingsStatus("Defaults restored.");
 });

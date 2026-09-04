@@ -1,6 +1,8 @@
 const COOLDOWN_MS = 4 * 24 * 60 * 60 * 1000;
 const ONEMASTER_PATTERN = /one\s*-?\s*master/i;
+const SHOWZ_REPLY_GUARD_KEY = "commentext_showz_reply_guard";
 let abortRequested = false;
+let replySubmitInFlight = false;
 
 function sleep(ms) {
   return new Promise((resolve, reject) => {
@@ -44,6 +46,56 @@ function activateClick(el) {
   el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
   el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   el.click();
+}
+
+function clickOnce(el) {
+  el.scrollIntoView({ block: "center", behavior: "instant" });
+  el.click();
+}
+
+function buildReplyTargetKey(author, text) {
+  return `${normalizeProductUrl(location.href)}|${normalizeAuthorName(author)}|${normalizeCommentText(text)}`;
+}
+
+function getReplyGuardEntry(targetKey) {
+  try {
+    const data = JSON.parse(sessionStorage.getItem(SHOWZ_REPLY_GUARD_KEY) || "{}");
+    return data[targetKey] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function markReplyGuardSubmitted(targetKey, replyText) {
+  try {
+    const data = JSON.parse(sessionStorage.getItem(SHOWZ_REPLY_GUARD_KEY) || "{}");
+    data[targetKey] = {
+      replyText: normalizeCommentText(replyText),
+      at: Date.now(),
+    };
+    sessionStorage.setItem(SHOWZ_REPLY_GUARD_KEY, JSON.stringify(data));
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function getReplyTextsInThread(item) {
+  const texts = [];
+  const replySection = item.querySelector(".reply, .review_main .reply");
+  if (!replySection) return texts;
+
+  for (const block of replySection.querySelectorAll(".review_reply")) {
+    const paragraphs = [...block.querySelectorAll("p")];
+    const contentP = paragraphs.find((p) => !p.classList.contains("writer"));
+    const text = (contentP?.textContent || "").trim();
+    if (text) texts.push(text);
+  }
+
+  return texts;
+}
+
+function threadHasReplyWithText(item, replyText) {
+  return getReplyTextsInThread(item).some((text) => commentTextMatches(text, replyText));
 }
 
 function isOneMasterAuthor(name) {
@@ -187,6 +239,10 @@ function oneMasterRepliedInThread(item) {
     if (isOneMasterAuthor(getAuthorName(reply))) return true;
     if (oneMasterRepliedInThread(reply)) return true;
   }
+
+  const replySection = item.querySelector(".reply, .review_main .reply");
+  if (replySection && hasOneMasterInReplyMarkup(replySection)) return true;
+
   return false;
 }
 
@@ -206,12 +262,142 @@ function getTopLevelReviewItems(root = document) {
   return all.filter((item) => !item.parentElement?.closest(".review_item"));
 }
 
-function hasOneMasterActivityInRoot(root) {
+function hasOneMasterInReplyMarkup(root) {
   if (!root) return false;
+  for (const el of root.querySelectorAll(
+    ".replier a, cite.replier, .replier, .review_reply cite, .review_reply .writer"
+  )) {
+    if (isOneMasterAuthor(el.textContent)) return true;
+  }
+  return false;
+}
+
+function hasOneMasterActivityOnFirstPage(root) {
+  if (!root) return false;
+
+  for (const item of getTopLevelReviewItems(root)) {
+    if (isOneMasterAuthor(getAuthorName(item))) return true;
+    if (oneMasterRepliedInThread(item)) return true;
+  }
+
   for (const item of root.querySelectorAll(".review_item")) {
     if (isOneMasterAuthor(getAuthorName(item))) return true;
   }
-  return false;
+
+  return hasOneMasterInReplyMarkup(root);
+}
+
+function normalizeUsername(name) {
+  return String(name || "").trim().toLowerCase();
+}
+
+function isAuthorInLikeList(author, likeUsers) {
+  const normalized = normalizeUsername(author);
+  if (!normalized) return false;
+  return (likeUsers || []).some((user) => normalizeUsername(user) === normalized);
+}
+
+function getReplyAuthor(replyEl) {
+  const replier = replyEl.querySelector(".replier a, cite.replier");
+  return (replier?.textContent || "").trim();
+}
+
+function getLikeButtonKey(btn) {
+  return btn.getAttribute("data-url") || btn.getAttribute("href") || "";
+}
+
+function findMainCommentLikeButton(reviewItem) {
+  const mainLikeArea = reviewItem.querySelector(".like.fr, :scope > .like");
+  if (mainLikeArea) {
+    const btn = mainLikeArea.querySelector("a.like");
+    if (btn && isVisible(btn)) return btn;
+  }
+
+  for (const btn of reviewItem.querySelectorAll("a.like")) {
+    if (btn.closest(".review_reply, .review_reply_wrapper, .reply")) continue;
+    if (isVisible(btn)) return btn;
+  }
+
+  return null;
+}
+
+function findReplyLikeButton(replyEl) {
+  const btn = replyEl.querySelector(".likeWrapper a.like, a.like");
+  if (btn && isVisible(btn)) return btn;
+  return null;
+}
+
+function collectAutoLikeTargets(root = document) {
+  const targets = [];
+
+  for (const item of root.querySelectorAll(".review_item")) {
+    const author = getAuthorName(item);
+    if (author) targets.push({ scope: item, author, kind: "comment" });
+  }
+
+  for (const reply of root.querySelectorAll(".review_reply")) {
+    const author = getReplyAuthor(reply);
+    if (author) targets.push({ scope: reply, author, kind: "reply" });
+  }
+
+  return targets;
+}
+
+async function expandReplyThreads() {
+  for (const item of document.querySelectorAll(".review_item")) {
+    const replyBtn = item.querySelector("a.reply_btn");
+    if (!replyBtn || !isVisible(replyBtn)) continue;
+    const match = (replyBtn.textContent || "").match(/\((\d+)\)/);
+    if (!match || parseInt(match[1], 10) === 0) continue;
+
+    const visibleReply = item.querySelector(".w_review_replys .review_reply");
+    if (visibleReply && isVisible(visibleReply)) continue;
+
+    activateClick(replyBtn);
+    await sleep(500);
+  }
+
+  for (const reply of document.querySelectorAll(".review_reply")) {
+    const nestedBtn = reply.querySelector("a.any_reply_btn");
+    if (!nestedBtn || !isVisible(nestedBtn)) continue;
+
+    const nestedReply = reply.querySelector(".any_review_box .review_reply");
+    if (nestedReply && isVisible(nestedReply)) continue;
+
+    activateClick(nestedBtn);
+    await sleep(400);
+  }
+}
+
+async function likeCommentsForUsers(likeUsers) {
+  const users = (likeUsers || []).map((name) => String(name || "").trim()).filter(Boolean);
+  if (!users.length) return 0;
+
+  await expandReplyThreads();
+
+  const clicked = new Set();
+  let liked = 0;
+
+  for (const { scope, author } of collectAutoLikeTargets(document)) {
+    if (!isAuthorInLikeList(author, users)) continue;
+
+    const likeBtn =
+      scope.classList.contains("review_reply")
+        ? findReplyLikeButton(scope)
+        : findMainCommentLikeButton(scope);
+
+    if (!likeBtn || !isVisible(likeBtn)) continue;
+
+    const key = getLikeButtonKey(likeBtn);
+    if (key && clicked.has(key)) continue;
+    if (key) clicked.add(key);
+
+    activateClick(likeBtn);
+    liked += 1;
+    await sleep(600);
+  }
+
+  return liked;
 }
 
 function isEligibleTopLevelComment(item) {
@@ -221,20 +407,6 @@ function isEligibleTopLevelComment(item) {
   const text = getCommentText(item);
   if (!text) return false;
   return true;
-}
-
-function isKengAuthor(name) {
-  return /^keng$/i.test(String(name || "").trim());
-}
-
-async function likeKengComments() {
-  for (const item of document.querySelectorAll(".review_item")) {
-    if (!isKengAuthor(getAuthorName(item))) continue;
-    const likeBtn = findLikeButton(item);
-    if (!likeBtn || !isVisible(likeBtn)) continue;
-    activateClick(likeBtn);
-    await sleep(600);
-  }
 }
 
 function findLikeButton(item) {
@@ -322,28 +494,23 @@ function findReplyTextarea(item) {
 }
 
 function findReplySubmitButton(item) {
-  const writeReply =
-    item.querySelector(".write_reply:not(.hide)") || getWriteReplyBox(item);
-  const scope = writeReply || item;
+  const writeReply = getWriteReplyBox(item);
+  if (!writeReply || writeReply.classList.contains("hide") || !isVisible(writeReply)) {
+    return null;
+  }
 
   const selectors = [
     "button.textbtn",
     "button.btn.textbtn",
-    ".write_reply button.btn",
     "input[type='submit']",
     "button[type='submit']",
-    ".btn_submit",
-    ".reply_submit",
-    ".submit_btn",
-    "a.submit",
   ];
   for (const selector of selectors) {
-    const el = scope.querySelector(selector);
-    if (isVisible(el) && !el.closest(".edit")) return el;
+    const el = writeReply.querySelector(selector);
+    if (isVisible(el)) return el;
   }
 
-  for (const el of scope.querySelectorAll("button, input[type=button], input[type=submit]")) {
-    if (el.closest(".edit")) continue;
+  for (const el of writeReply.querySelectorAll("button, input[type=button], input[type=submit]")) {
     const text = (el.textContent || el.value || "").trim().toLowerCase();
     if (text === "submit" || text === "reply" || text === "post") return el;
   }
@@ -424,15 +591,17 @@ async function getReplyContext() {
     comments = extractCommentTexts(document);
   }
 
-  const hasOneMasterActivity = hasOneMasterActivityInRoot(reviewRoot);
-  if (hasOneMasterActivity) {
+  const hasOneMasterComment =
+    hasOneMasterActivityOnFirstPage(reviewRoot) ||
+    hasOneMasterActivityOnFirstPage(document);
+  if (hasOneMasterComment) {
     return {
       proId,
       title,
       description,
       comments,
       eligibleComments: [],
-      hasOneMasterActivity: true,
+      hasOneMasterComment: true,
     };
   }
 
@@ -454,8 +623,28 @@ async function getReplyContext() {
     description,
     comments,
     eligibleComments,
-    hasOneMasterActivity: false,
+    hasOneMasterComment: false,
   };
+}
+
+async function prepareShowZProductPage(autoLikeUsers) {
+  await ensureReviewListReady();
+  const likedCount = await likeCommentsForUsers(autoLikeUsers);
+
+  const proId = getProductId();
+  let reviewRoot = document;
+  if (proId) {
+    try {
+      reviewRoot = await fetchReviewListDoc(proId);
+    } catch (_) {
+      /* use live DOM */
+    }
+  }
+
+  const hasOneMasterComment =
+    hasOneMasterActivityOnFirstPage(reviewRoot) ||
+    hasOneMasterActivityOnFirstPage(document);
+  return { likedCount, hasOneMasterComment };
 }
 
 function getTopLevelItemByIndex(index) {
@@ -588,35 +777,80 @@ async function waitForReplyForm(item, timeoutMs = 15000, requireSubmit = true) {
 async function executeReply(
   commentIndex,
   replyText,
-  _submitDelayMs = 15000,
+  submitDelayMs = 10000,
   author = "",
-  text = ""
+  text = "",
+  autoLikeUsers = []
 ) {
   abortRequested = false;
+  const targetKey = buildReplyTargetKey(author, text);
+
+  if (getReplyGuardEntry(targetKey) || replySubmitInFlight) {
+    return { filled: true, submitted: true, skipped: true };
+  }
+
   await ensureReviewListReady();
-  await likeKengComments();
+  await likeCommentsForUsers(autoLikeUsers);
   const item = resolveCommentTarget(commentIndex, author, text);
 
-  const likeBtn = findLikeButton(item);
-  if (likeBtn) {
-    activateClick(likeBtn);
-    await sleep(600);
+  if (threadHasReplyWithText(item, replyText)) {
+    markReplyGuardSubmitted(targetKey, replyText);
+    return { filled: true, submitted: true, skipped: true };
   }
 
-  await openReplyForm(item);
-  const { textarea } = await waitForReplyForm(item, 15000, false);
+  replySubmitInFlight = true;
 
-  textarea.focus();
-  textarea.classList.remove("default");
-  textarea.value = replyText;
-  textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  try {
+    const likeBtn = findLikeButton(item);
+    if (likeBtn) {
+      activateClick(likeBtn);
+      await sleep(600);
+    }
 
-  if (!textarea.value.trim()) {
-    throw new Error("Failed to fill reply textarea");
+    await openReplyForm(item);
+    const { textarea, submitBtn } = await waitForReplyForm(item, 15000, true);
+
+    textarea.focus();
+    textarea.classList.remove("default");
+    textarea.value = replyText;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+
+    if (!textarea.value.trim()) {
+      throw new Error("Failed to fill reply textarea");
+    }
+
+    const waitMs = Math.max(1000, Math.min(120000, Number(submitDelayMs) || 10000));
+    await sleep(waitMs);
+
+    if (!submitBtn || !isVisible(submitBtn)) {
+      throw new Error("Reply submit button not found");
+    }
+
+    if (threadHasReplyWithText(item, replyText)) {
+      markReplyGuardSubmitted(targetKey, replyText);
+      return { filled: true, submitted: true, skipped: true };
+    }
+
+    clickOnce(submitBtn);
+    markReplyGuardSubmitted(targetKey, replyText);
+
+    const start = Date.now();
+    while (Date.now() - start < 15000) {
+      if (abortRequested) throw new Error("Stopped by user");
+      if (threadHasReplyWithText(item, replyText)) {
+        return { filled: true, submitted: true };
+      }
+      if (!isReplyFormOpen(item) || !findReplyTextarea(item)) {
+        return { filled: true, submitted: true };
+      }
+      await sleep(300);
+    }
+
+    return { filled: true, submitted: true };
+  } finally {
+    replySubmitInFlight = false;
   }
-
-  return { filled: true };
 }
 
 browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -652,12 +886,18 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
 
+      if (message.type === "PREPARE_SHOWZ_PRODUCT") {
+        sendResponse(await prepareShowZProductPage(message.autoLikeUsers || []));
+        return;
+      }
+
       if (message.type === "ENSURE_REVIEWS") {
         await ensureReviewListReady();
-        await likeKengComments();
+        const likedCount = await likeCommentsForUsers(message.autoLikeUsers || []);
         sendResponse({
           ok: true,
           count: getTopLevelReviewItems().length,
+          likedCount,
         });
         return;
       }
@@ -675,7 +915,8 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             message.replyText,
             message.submitDelayMs,
             message.author,
-            message.text
+            message.text,
+            message.autoLikeUsers
           )
         );
         return;

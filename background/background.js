@@ -30,7 +30,7 @@ function startKeepalive() {
   if (keepaliveTimer) return;
   keepaliveTimer = setInterval(() => {
     browser.storage.local.get(UI_LOG_KEY).catch(() => {});
-  }, 15000);
+  }, 5000);
 }
 
 function stopKeepalive() {
@@ -192,6 +192,14 @@ async function sendTabMessage(
 
       if (message.type === "SUBMIT_COMMENT" && (await submitLikelySucceeded(tabId))) {
         return { submitted: true };
+      }
+
+      if (
+        message.type === "EXECUTE_REPLY" &&
+        /establish connection|receiving end|message port closed/i.test(err.message) &&
+        (await showzReplyLikelySucceeded(tabId))
+      ) {
+        return { filled: true, submitted: true };
       }
 
       const retryable = /establish connection|receiving end|message port closed/i.test(
@@ -482,7 +490,6 @@ async function runAutomation(options = {}) {
   updateStatus("running", "Starting...");
 
   try {
-    await archiveCursorAgent();
     await clearExpiredHistory();
     log("--- New run started ---");
 
@@ -565,8 +572,8 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "STOP_AGENT") {
-    stopShowZAgent().then(() => {
-      sendResponse({ ok: true, active: isCursorAgentActive() });
+    stopShowZAgent().then(async () => {
+      sendResponse({ ok: true, active: await isCursorAgentActive() });
     });
     return true;
   }
@@ -581,7 +588,8 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     Promise.all([
       browser.storage.local.get([UI_LOG_KEY, UI_STATUS_KEY]),
       getPlatformInfoCached(),
-    ]).then(([data, platform]) => {
+      isCursorAgentActive(),
+    ]).then(([data, platform, agentActive]) => {
       const savedStatus = data[UI_STATUS_KEY] || {};
       sendResponse({
         status: runState.status,
@@ -589,7 +597,7 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         logs: data[UI_LOG_KEY] || [],
         platform: platform.os,
         isAndroid: platform.os === "android",
-        agentActive: isCursorAgentActive(),
+        agentActive,
       });
     });
     return true;
@@ -635,3 +643,21 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return false;
 });
+
+async function recoverBackgroundState() {
+  const agentActive = await isCursorAgentActive();
+  if (agentActive && typeof notifyAgentStatus === "function") {
+    notifyAgentStatus(true);
+  }
+
+  const data = await browser.storage.local.get(UI_STATUS_KEY);
+  const savedStatus = data[UI_STATUS_KEY];
+  if (savedStatus?.status === "running" && runState.status !== "running") {
+    await updateStatus("idle", "Run interrupted — restart ShowZ Reply");
+    log(
+      "Previous run was interrupted (background reloaded). Click ShowZ Reply to continue."
+    );
+  }
+}
+
+recoverBackgroundState().catch(() => {});

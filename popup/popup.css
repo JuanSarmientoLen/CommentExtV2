@@ -19,13 +19,17 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 600px;
+}
+
 body {
   position: relative;
   width: 380px;
+  height: 600px;
   margin: 0;
-  padding: 14px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  padding: 10px 12px 12px;
+  overflow: hidden;
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -33,6 +37,19 @@ body {
     radial-gradient(circle at top right, rgba(34, 211, 238, 0.08), transparent 42%),
     radial-gradient(circle at bottom left, rgba(129, 140, 248, 0.1), transparent 38%),
     linear-gradient(180deg, var(--bg-1), var(--bg-0));
+}
+
+#mainView,
+#settingsView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#settingsView.hidden {
+  display: none !important;
 }
 
 .bg-grid,
@@ -68,8 +85,9 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .brand {
@@ -195,20 +213,23 @@ header h1 {
 
 .actions {
   display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .site-actions {
   display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .showz-actions {
   display: flex;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .showz-btn,
@@ -221,7 +242,8 @@ header h1 {
 }
 
 .assist-panel {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .assist-lead {
@@ -246,14 +268,11 @@ header h1 {
 
 body.android-mode .actions,
 body.android-mode .site-actions,
-body.android-mode .showz-actions,
-body.android-mode #infoDesktop,
-body.android-mode #infoBackground {
+body.android-mode .showz-actions {
   display: none;
 }
 
-body.android-mode #assistPanel,
-body.android-mode #infoAssist {
+body.android-mode #assistPanel {
   display: block;
 }
 
@@ -261,15 +280,11 @@ body.android-mode #assistPanel.hidden {
   display: block;
 }
 
-body.android-mode #infoAssist.hidden {
-  display: block;
-}
-
 button {
   position: relative;
   border: none;
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   font-family: Orbitron, sans-serif;
   font-size: 11px;
   font-weight: 500;
@@ -348,16 +363,22 @@ button:disabled {
 }
 
 .log-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  margin-bottom: 0;
 }
 
 .log-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-bottom: 1px solid rgba(56, 189, 248, 0.12);
   background: rgba(8, 14, 28, 0.55);
+  flex-shrink: 0;
 }
 
 .log-header h2 {
@@ -378,12 +399,14 @@ button:disabled {
 }
 
 .log {
-  max-height: 230px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  padding: 10px 14px;
+  overflow-x: hidden;
+  padding: 8px 12px;
   font-family: "JetBrains Mono", Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 10px;
+  line-height: 1.4;
   scrollbar-width: thin;
   scrollbar-color: rgba(56, 189, 248, 0.45) rgba(8, 14, 28, 0.8);
 }
@@ -398,8 +421,8 @@ button:disabled {
 }
 
 .log-entry {
-  margin-bottom: 7px;
-  padding-left: 8px;
+  margin-bottom: 5px;
+  padding-left: 6px;
   border-left: 2px solid rgba(56, 189, 248, 0.18);
   color: #c9d9f2;
   white-space: pre-wrap;
@@ -429,7 +452,8 @@ button:disabled {
 
 footer,
 .footer-actions {
-  margin-top: 12px;
+  flex-shrink: 0;
+  margin-top: 8px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -440,11 +464,15 @@ footer,
 }
 
 .settings-header {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .settings-form {
-  padding: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
 }
 
 .field {

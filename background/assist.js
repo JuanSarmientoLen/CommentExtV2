@@ -21,7 +21,6 @@ async function runAssistComment() {
   updateStatus("running", "Assist mode...");
 
   try {
-    await archiveCursorAgent();
     await clearExpiredHistory();
     log("--- Assist mode started ---");
     checkStop();

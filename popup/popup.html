@@ -61,13 +61,6 @@
         <button id="assistStopBtn" class="secondary danger-btn assist-stop-btn hidden">Stop</button>
       </div>
 
-      <div class="info panel" id="infoPanel">
-        <p id="infoDesktop">Full run posts 2 comments each on Gundamit and Chowbrick.</p>
-        <p id="infoAssist" class="hidden">Stay on the product tab while the comment generates and submits.</p>
-        <p>Comments are generated via Cursor API (Composer 2.5).</p>
-        <p id="infoBackground">Runs continue in the background. Reopen this popup anytime to view logs.</p>
-      </div>
-
       <section class="panel log-panel">
         <div class="log-header">
           <h2>
@@ -131,6 +124,14 @@
         </div>
 
         <div class="field">
+          <label for="autoLikeUsersInput">Auto-like users (ShowZ)</label>
+          <p class="field-hint">
+            One username per line. When a ShowZ product opens, all comments by these users are liked before anything else runs.
+          </p>
+          <textarea id="autoLikeUsersInput" rows="4" placeholder="keng"></textarea>
+        </div>
+
+        <div class="field">
           <label for="submitDelayInput">Submit delay (seconds)</label>
           <p class="field-hint">Wait time after filling a new comment before clicking Submit.</p>
           <input id="submitDelayInput" type="number" min="1" max="120" step="1" />
@@ -138,7 +139,7 @@
 
         <div class="field">
           <label for="showzReplyDelayInput">ShowZ reply delay (seconds)</label>
-          <p class="field-hint">Unused — ShowZ replies are filled only; you submit manually on the page.</p>
+          <p class="field-hint">Wait time after filling a ShowZ reply before clicking Submit.</p>
           <input id="showzReplyDelayInput" type="number" min="1" max="120" step="1" />
         </div>
 

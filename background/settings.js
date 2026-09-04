@@ -1,6 +1,6 @@
 const SETTINGS_KEY = "extensionSettings";
 const DEFAULT_SUBMIT_DELAY_MS = 15000;
-const DEFAULT_SHOWZ_REPLY_DELAY_MS = 15000;
+const DEFAULT_SHOWZ_REPLY_DELAY_MS = 10000;
 const MIN_SUBMIT_DELAY_MS = 1000;
 const MAX_SUBMIT_DELAY_MS = 120000;
 
@@ -15,6 +15,8 @@ const DEFAULT_COMMENT_RULES = `You write a single product-page comment only. Rul
 - Do not use phrases like "Curious to see how".
 - Avoid the word "silhouette"; use more casual wording instead.
 - Output ONLY the comment text, nothing else. No quotes around it.`;
+
+const DEFAULT_AUTO_LIKE_USERS = ["keng"];
 
 const DEFAULT_SHOWZ_REPLY_RULES = `You write a single reply to an existing product comment. Rules:
 - Be informed based on the product description and other comments on the page.
@@ -37,6 +39,26 @@ function maskApiKey(key) {
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
 }
 
+function normalizeAutoLikeUsers(users) {
+  if (!Array.isArray(users)) return [...DEFAULT_AUTO_LIKE_USERS];
+  const normalized = users
+    .map((name) => String(name || "").trim())
+    .filter(Boolean);
+  return normalized.length ? normalized : [...DEFAULT_AUTO_LIKE_USERS];
+}
+
+function parseAutoLikeUsersText(text) {
+  const users = String(text || "")
+    .split(/[\n,;]+/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return normalizeAutoLikeUsers(users);
+}
+
+function formatAutoLikeUsersForInput(users) {
+  return normalizeAutoLikeUsers(users).join("\n");
+}
+
 async function getSettings() {
   const data = await browser.storage.local.get(SETTINGS_KEY);
   const stored = data[SETTINGS_KEY] || {};
@@ -46,6 +68,7 @@ async function getSettings() {
     submitDelayMs: stored.submitDelayMs ?? DEFAULT_SUBMIT_DELAY_MS,
     showzReplyDelayMs: stored.showzReplyDelayMs ?? DEFAULT_SHOWZ_REPLY_DELAY_MS,
     apiKey: stored.apiKey || "",
+    autoLikeUsers: normalizeAutoLikeUsers(stored.autoLikeUsers),
   };
 }
 
@@ -71,6 +94,8 @@ async function getSettingsForPopup() {
     showzReplyRules: settings.showzReplyRules,
     submitDelaySeconds: Math.round(settings.submitDelayMs / 1000),
     showzReplyDelaySeconds: Math.round(settings.showzReplyDelayMs / 1000),
+    autoLikeUsers: settings.autoLikeUsers,
+    autoLikeUsersText: formatAutoLikeUsersForInput(settings.autoLikeUsers),
     apiKey: effectiveKey,
     apiKeyMasked: maskApiKey(effectiveKey),
     apiKeySource: !isPlaceholderApiKey(storedKey)
@@ -122,6 +147,14 @@ async function saveSettings(partial) {
     next.apiKey = String(partial.apiKey).trim();
   }
 
+  if (partial.autoLikeUsers !== undefined) {
+    next.autoLikeUsers = normalizeAutoLikeUsers(partial.autoLikeUsers);
+  }
+
+  if (partial.autoLikeUsersText !== undefined) {
+    next.autoLikeUsers = parseAutoLikeUsersText(partial.autoLikeUsersText);
+  }
+
   await browser.storage.local.set({ [SETTINGS_KEY]: next });
   return next;
 }
@@ -134,6 +167,7 @@ async function resetSettings() {
       submitDelayMs: DEFAULT_SUBMIT_DELAY_MS,
       showzReplyDelayMs: DEFAULT_SHOWZ_REPLY_DELAY_MS,
       apiKey: "",
+      autoLikeUsers: [...DEFAULT_AUTO_LIKE_USERS],
     },
   });
 }
